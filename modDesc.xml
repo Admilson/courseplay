@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8" standalone="no" ?>
+<?xml version="1.0" encoding="utf-8" standalone="no" ?>
 <modDesc descVersion="20">
 	<version>4.00.0139</version>
 	<author><![CDATA[Courseplay Dev Team]]></author>
@@ -2354,10 +2354,10 @@ Vertaling: [BR] Admilson], [CZ] Albi, [ES] JFMtb, [FR] Gui7545, [HU] Chris von B
 			<br>Parar marcha ré</br>
 		</text>
 
-		<text name="COURSEPLAY_INGAMEMAP_ICONS_SHOWTEXT"> <!-- should the vehicle name/course be displayed with the map CP icons --> <!-- missing: br, cz, es, hu, it, nl, ru -->
+		<text name="COURSEPLAY_INGAMEMAP_ICONS_SHOWTEXT"> <!-- should the vehicle name/course be displayed with the map CP icons --> <!-- missing: cz, es, fr, hu, it, nl, ru -->
 			<en>Map icons: display text</en>
 			<de>Karten-Icons: Text anzeigen</de>
-			<fr>Icones sur la carte: afficher le texte</fr>
+			<br>Mapa: Mostrar texto</br>
 		</text>
 
 		<!-- Yes/No dialogues --> <!-- missing: cz, es, it, nl -->
