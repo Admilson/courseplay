@@ -1,9 +1,12 @@
 .project
 *~
 *.gitattributes
-*.gitignore
 *.idea
 *.iml
+out
+reload/venv
+reload.xml
+
 
 # Windows image file caches
 Thumbs.db
@@ -19,4 +22,8 @@ $RECYCLE.BIN/
 .builtpath
 
 # Satis
-SatisInfo.txt
+TurnRadiusCalculation.lua
+TriangleCalculation.lua
+
+# Jakob
+*.WinMerge

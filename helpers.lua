@@ -1,4 +1,6 @@
-﻿function courseplay:isEven(n)
+local abs, ceil, floor, huge, max, min, pi, sqrt = math.abs, math.ceil, math.floor, math.huge, math.max, math.min, math.pi, math.sqrt;
+
+function courseplay:isEven(n)
    return tonumber(n) % 2 == 0;
 end;
 
@@ -9,20 +11,21 @@ end;
 --Table concatenation: http://stackoverflow.com/a/1413919
 -- return a new array containing the concatenation of all of its parameters. Scaler parameters are included in place, and array parameters have their values shallow-copied to the final array. Note that userdata and function values are treated as scalar.
 function tableConcat(...) 
-	local t = {}
-	for n = 1,select("#",...) do
-		local arg = select(n,...)
-		if type(arg)=="table" then
+	local t = {};
+	for n = 1, select('#', ...) do
+		local arg = select(n, ...);
+		if type(arg) == 'table' then
 			for _,v in ipairs(arg) do
-				t[#t+1] = v
-			end
+				t[#t+1] = v;
+			end;
 		else
-			t[#t+1] = arg
-		end
-	end
+			t[#t+1] = arg;
+		end;
+	end;
 	return t;
-end
+end;
 
+-- TODO: This and isLowered() should be in an AIDriverUtil class or at least in a different file, like toolManager.lua
 function courseplay:isFolding(workTool) --returns isFolding, isFolded, isUnfolded
 	if not courseplay:isFoldable(workTool) then
 		return false, false, true;
@@ -30,40 +33,43 @@ function courseplay:isFolding(workTool) --returns isFolding, isFolded, isUnfolde
 
 	local isFolding, isFolded, isUnfolded = false, true, true;
 	courseplay:debug(string.format('%s: isFolding(): realUnfoldDirection=%s, turnOnFoldDirection=%s, startAnimTime=%s, foldMoveDirection=%s', nameNum(workTool), tostring(workTool.cp.realUnfoldDirection), tostring(workTool.turnOnFoldDirection), tostring(workTool.startAnimTime), tostring(workTool.foldMoveDirection)), 17);
-
-	for k,foldingPart in pairs(workTool.foldingParts) do
-		--local charSet = foldingPart.animCharSet;
-		--local animTime = charSet ~= 0 and getAnimTrackTime(charSet, 0) or workTool:getRealAnimationTime(foldingPart.animationName);
-
-		--isFolded/isUnfolded
-		--print(string.format('\tfoldingPart %d: animTime=%s, foldAnimTime=%s, isFoldedAnimTime=%s, isUnfoldedAnimTime=%s', k, tostring(animTime), tostring(workTool.foldAnimTime), tostring(foldingPart.isFoldedAnimTime),  tostring(foldingPart.isUnfoldedAnimTime)));
-		if workTool.foldAnimTime ~= foldingPart.isFoldedAnimTimeNormal then
-			isFolded = false;
-			courseplay:debug(string.format('\tfoldingPart %d: foldAnimTime=%s, isFoldedAnimTimeNormal=%s, isUnfoldedAnimTimeNormal=%s -> isFolded = false', k, tostring(workTool.foldAnimTime), tostring(foldingPart.isFoldedAnimTimeNormal),  tostring(foldingPart.isUnfoldedAnimTimeNormal)), 17);
+	
+	if workTool.spec_foldable.foldAnimTime ~= (workTool.spec_foldable.oldFoldAnimTime or 0) then
+		if workTool.spec_foldable.foldMoveDirection > 0 and workTool.spec_foldable.foldAnimTime < 1 then
+			isFolding = true;
+		elseif workTool.spec_foldable.foldMoveDirection < 0 and workTool.spec_foldable.foldAnimTime > 0 then
+			isFolding = true;
 		end;
-		if workTool.foldAnimTime ~= foldingPart.isUnfoldedAnimTimeNormal then
-			isUnfolded = false;
-			courseplay:debug(string.format('\tfoldingPart %d: foldAnimTime=%s, isFoldedAnimTimeNormal=%s, isUnfoldedAnimTimeNormal=%s -> isUnfolded = false', k, tostring(workTool.foldAnimTime), tostring(foldingPart.isFoldedAnimTimeNormal),  tostring(foldingPart.isUnfoldedAnimTimeNormal)), 17);
-		end;
-
-		--isFolding
-		if workTool.oldFoldAnimTime == nil then workTool.oldFoldAnimTime = 0; end;
-		if workTool.foldAnimTime ~= workTool.oldFoldAnimTime then
-			--if workTool.foldMoveDirection > 0 and animTime < foldingPart.animDuration then
-			if workTool.foldMoveDirection > 0 and workTool.foldAnimTime < 1 then
-				isFolding = true;
-			--elseif workTool.foldMoveDirection < 0 and animTime > 0 then
-			elseif workTool.foldMoveDirection < 0 and workTool.foldAnimTime > 0 then
-				isFolding = true;
-			end;
-
-			workTool.oldFoldAnimTime = workTool.foldAnimTime;
-		end;
+		workTool.spec_foldable.oldFoldAnimTime = workTool.spec_foldable.foldAnimTime;
 	end;
 
+	isUnfolded = workTool:getIsUnfolded();
+	isFolded = not isUnfolded and not isFolding;
+	
 	courseplay:debug(string.format('\treturn isFolding=%s, isFolded=%s, isUnfolded=%s', tostring(isFolding), tostring(isFolded), tostring(isUnfolded)), 17);
 	return isFolding, isFolded, isUnfolded;
 end;
+
+-- TODO: Giants question: this is copied from Attachable.getCanAIImplementContinueWork() but when calling it with spec_attachable, it blows up with
+-- dataS/scripts/vehicles/specializations/Attachable.lua(1026) : attempt to index local 'jointDesc' (a nil value)
+-- The stock Giants getIsLowered() returns true the moment the tool starts moving. What we need however is when
+-- the tool is in the final lowered position.
+function courseplay:isLowered(workTool)
+	local spec = workTool.spec_attachable
+	if not workTool:getAINeedsLowering() or not spec then return true end
+	local isLowered = true
+	if spec.lowerAnimation ~= nil then
+		local time = workTool:getAnimationTime(spec.lowerAnimation)
+		isLowered = time == 1 or time == 0
+	end
+	local jointDesc = spec.attacherVehicle:getAttacherJointDescFromObject(workTool)
+	if jointDesc.allowsLowering and workTool:getAINeedsLowering() then
+		if jointDesc.moveDown then
+			isLowered = (jointDesc.moveAlpha == jointDesc.lowerAlpha or jointDesc.moveAlpha == jointDesc.upperAlpha) and isLowered
+		end
+	end
+	return isLowered
+end
 
 function courseplay:isAnimationPartPlaying(workTool, index)
 	if type(index) == "number" then
@@ -107,46 +113,20 @@ function courseplay:nilOrBool(variable, bool)
 	return variable == nil or (variable ~= nil and variable == bool);
 end;
 
-function table.contains(t, element) --TODO: always use Utils.hasListElement
-	for _, value in pairs(t) do
-		if value == element then
-			return true;
-		end;
-	end;
-	return false;
-end;
-
-function table.map(t, func)
-	local newArray = {};
-	for i,v in pairs(t) do
-		newArray[i] = func(v);
-	end;
-	return newArray;
-end;
-
-function table.reverse(t)
-	local reversedTable = {};
-	local itemCount = #t;
-	for k,v in ipairs(t) do
-		reversedTable[itemCount + 1 - k] = v;
-	end;
-	return reversedTable;
-end;
-
 function nameNum(vehicle, hideNum)
-	if vehicle == nil then
+	if vehicle == nil or not vehicle.getName then
 		return 'nil';
 	end;
 
 	if vehicle.cp ~= nil and vehicle.cp.coursePlayerNum ~= nil then
 		if hideNum then
-			return tostring(vehicle.name);
+			return tostring(vehicle:getName());
 		end;
-		return tostring(vehicle.name) .. ' (#' .. tostring(vehicle.cp.coursePlayerNum) .. ')';
+		return tostring(vehicle:getName()) .. ' (#' .. tostring(vehicle.cp.coursePlayerNum) .. ')';
 	elseif vehicle.isHired then
-		return tostring(vehicle.name) .. ' (helper)';
+		return tostring(vehicle:getName()) .. ' (helper)';
 	end;
-	return tostring(vehicle.name);
+	return vehicle:getName()
 end;
 
 function courseplay:isBetween(n, num1, num2, include)
@@ -161,7 +141,8 @@ function courseplay:isBetween(n, num1, num2, include)
 end;
 
 function courseplay:setVarValueFromString(self, str, value)
-	local what = Utils.splitString(".", str);
+	--print(string.format("courseplay:setVarValueFromString(self, %s, %s)",str,tostring(value)))
+	local what = StringUtil.splitString(".", str);
 	local whatDepth = #what;
 	if whatDepth < 1 or whatDepth > 5 then
 		return;
@@ -173,7 +154,6 @@ function courseplay:setVarValueFromString(self, str, value)
 	elseif what[1] == "courseplay" then
 		baseVar = courseplay;
 	end;
-
 	if baseVar ~= nil then
 		local result;
 		if whatDepth == 1 then --self
@@ -183,8 +163,13 @@ function courseplay:setVarValueFromString(self, str, value)
 			baseVar[what[2]] = value;
 			result = value;
 		elseif whatDepth == 3 then --self.cp.var
-			baseVar[what[2]][what[3]] = value;
-			result = value;
+			if baseVar == self and what[2] == 'cp' then
+				self:setCpVar(what[3], value,true,courseplay.isClient)
+				result = value;
+			else
+				baseVar[what[2]][what[3]] = value;
+				result = value;
+			end
 		elseif whatDepth == 4 then --self.cp.table.var
 			baseVar[what[2]][what[3]][what[4]] = value;
 			result = value;
@@ -199,7 +184,7 @@ function courseplay:setVarValueFromString(self, str, value)
 	what = nil;
 end;
 function courseplay:getVarValueFromString(self, str)
-	local what = Utils.splitString(".", str);
+	local what = StringUtil.splitString(".", str);
 	local whatDepth = #what;
 	local whatObj;
 	if what[1] == "self" then 
@@ -214,7 +199,7 @@ function courseplay:getVarValueFromString(self, str)
 			whatObj = whatObj[key];
 			
 			if i ~= whatDepth and type(whatObj) ~= "table" then
-				print(nameNum(self) .. ": error in string \"" .. str .. "\" @ \"".. key .. "\": traversal failed");
+				print(('%s: error in string %q @ %s: traversal failed'):format(nameNum(self), str, key));
 				whatObj = nil;
 				break;
 			end;
@@ -226,19 +211,22 @@ function courseplay:getVarValueFromString(self, str)
 end;
 
 function courseplay:boolToInt(bool)
-	if bool == nil or type(bool) ~= "boolean" then
-		return nil;
-	elseif bool == true then
+	if bool and type(bool) == 'boolean' then
 		return 1;
-	elseif bool == false then
-		return 0; 
 	end;
+	return;
 end;
 function courseplay:intToBool(int)
 	if int == nil or type(int) ~= "number" then
 		return nil;
 	end;
 	return int == 1;
+end;
+function courseplay:trueOrNil(bool)
+	if bool ~= nil and bool == true then
+		return true;
+	end;
+	return nil;
 end;
 
 function courseplay:loopedTable(tab, idx, maxIdx)
@@ -282,22 +270,6 @@ function courseplay:varLoop(var, changeBy, maxVar, minVar)
 		var = maxVar;
 	end;
 	return var;
-end;
-
-function courseplay:fillTypesMatch(fillTrigger, workTool)
-	if fillTrigger ~= nil then
-		if not workTool.cp.hasUrfSpec then
-			if fillTrigger.fillType then
-				return workTool:allowFillType(fillTrigger.fillType, false);
-			elseif fillTrigger.currentFillType then
-				return workTool:allowFillType(fillTrigger.currentFillType, false);
-			end;
-		elseif workTool.cp.hasUrfSpec and workTool.isFertilizing > 1 then
-			return fillTrigger.fillType and workTool.currentSprayFillType == fillTrigger.fillType;
-		end;
-	end;
-
-	return false;
 end;
 
 -- by horoman
@@ -378,36 +350,38 @@ function courseplay.utils.table.move(t1, t2, t1_index, t2_index)
 	end;
 
 	t2[t2_index] = t1[t1_index];
-	t1[t1_index] = nil;
+	table.remove(t1, t1_index);
 	return t2[t2_index] ~= nil;
 end;
 
-function courseplay.utils.table.last(tab)
-	if #tab == 0 then
-		return nil;
+function table.map(t, func)
+	local newArray = {};
+	for i,v in pairs(t) do
+		newArray[i] = func(v);
 	end;
-	return tab[#tab];
+	return newArray;
 end;
 
-function courseplay.utils.table.getMax(tab, field)
-	local max;
-	if tab ~= nil and field ~= nil then
-		max = false
-		for k, v in pairs(tab) do
-			if v[field] ~= nil then
-				max = v[field]
-				break
-			end
-		end
-		for k, v in pairs(tab) do
-			if v[field] ~= nil then
-				if v[field] > max then
-					max = v[field]
-				end
-			end
-		end
+-- reverse order of elements in table in place
+function table.reverse(t)
+	local i, j = 1, #t
+
+	while i < j do
+		t[i], t[j] = t[j], t[i]
+
+		i = i + 1
+		j = j - 1
 	end
-	return max
+end;
+
+function table.getLast(t)
+	if #t == 0 then
+		if next(t) ~= nil then
+			return table.maxn(t);
+		end;
+		return nil;
+	end;
+	return t[#t];
 end;
 
 function table.rotate(tbl, inc) --@gist: https://gist.github.com/JakobTischler/b4bb7a4d1c8cf8d2d85f
@@ -436,87 +410,73 @@ function table.rotate(tbl, inc) --@gist: https://gist.github.com/JakobTischler/b
 	return t;
 end;
 
+function courseplay.utils.table.getMax(tab, field)
+	local max;
+	if tab ~= nil and field ~= nil then
+		max = false
+		for k, v in pairs(tab) do -- TODO (Jakob): use next(tab) instead of for loop
+			if v[field] ~= nil then
+				max = v[field]
+				break
+			end
+		end
+		for k, v in pairs(tab) do
+			if v[field] ~= nil then
+				if v[field] > max then
+					max = v[field]
+				end
+			end
+		end
+	end
+	return max
+end;
 
 
-function courseplay.utils.findXMLNodeByAttr(File, node, attr, value, val_type)
+
+courseplay.prmGetXMLFn = {
+	Bool = getXMLBool,
+	Float = getXMLFloat,
+	Int = getXMLInt,
+	String = getXMLString
+};
+courseplay.prmSetXMLFn = {
+	Bool = setXMLBool,
+	Float = setXMLFloat,
+	Int = setXMLInt,
+	String = setXMLString
+};
+function courseplay.utils.findXMLNodeByAttr(File, node, attr, value, valueType)
 	-- returns the node number in case of success
 	-- else it returns the negative value of the next unused node (if there are 6 nodes with the name defined by the node parameter and none matches the search, the function returns -7)
-	val_type = val_type or 'Int'
+	valueType = valueType or 'Int'
 	local i = -1
 	local done = false
 	local dummy
-	
-	-- this solution does not look very nice but has no unnecessary statements in the loops which should make them as fast as possible
-	if val_type == 'Int' then
+
+	if courseplay.prmGetXMLFn[valueType] ~= nil then
+		-- this solution does not look very nice but has no unnecessary statements in the loops which should make them as fast as possible
 		repeat
-			i = i + 1
-			dummy = ''				
-			dummy = getXMLInt(File, string.format(node .. '(%d)' .. "#" .. attr, i))			
+			i = i + 1;
+			dummy = '';
+			dummy = courseplay.prmGetXMLFn[valueType](File, string.format(node .. '(%d)' .. "#" .. attr, i));
 			if dummy == value then
-				done = true
-			elseif dummy == nil then
-				--the attribute seems not to exist. Does the node?
-				if not hasXMLProperty(File, string.format(node .. '(%d)', i)) then
-					-- if the node does not exist, we are at the end and done
-					done = true
-				end
-			end
-		until done
-	elseif val_type == 'String' then
-		repeat
-			i = i + 1
-			dummy = ''				
-			dummy = getXMLString(File, string.format(node .. '(%d)' .. "#" .. attr, i))
-			if dummy == value then
-				done = true
-			elseif dummy == nil then
-				--the attribute seems not to exist. Does the node?
-				if not hasXMLProperty(File, string.format(node .. '(%d)', i)) then
-					-- if the node does not exist, we are at the end and done
-					done = true
-				end
-			end
-		until done
-	elseif val_type == 'Float' then
-		repeat
-			i = i + 1
-			dummy = ''				
-			dummy = getXMLFloat(File, string.format(node .. '(%d)' .. "#" .. attr, i))
-			if dummy == value then
-				done = true
-			elseif dummy == nil then
-				--the attribute seems not to exist. Does the node?
-				if not hasXMLProperty(File, string.format(node .. '(%d)', i)) then
-					-- if the node does not exist, we are at the end and done
-					done = true
-				end
-			end
-		until done		
-	elseif val_type == 'Bool' then
-		repeat
-			i = i + 1
-			dummy = ''				
-			dummy = getXMLBool(File, string.format(node .. '(%d)' .. "#" .. attr, i))
-			if dummy == value then
-				done = true
-			elseif dummy == nil then
-				--the attribute seems not to exist. Does the node?
-				if not hasXMLProperty(File, string.format(node .. '(%d)', i)) then
-					-- if the node does not exist, we are at the end and done
-					done = true
-				end
-			end
-		until done		
+				done = true;
+			elseif dummy == nil then -- the attribute seems not to exist. Does the node?
+				if not hasXMLProperty(File, string.format(node .. '(%d)', i)) then -- if the node does not exist, we are at the end and done
+					done = true;
+				end;
+			end;
+		until done;
 	else
-		-- Error?!
-	end	
-	
+		-- ERROR
+	end;
+
 	if dummy ~= nil then
-		return i
+		return i;
 	else
-		return -1*i
-	end
-end
+		return -1 * i;
+	end;
+end;
 
 function courseplay.utils.findFreeXMLNode(File, node)
 	-- returns the node number in case of success
@@ -535,28 +495,28 @@ function courseplay.utils.findFreeXMLNode(File, node)
 	return i
 end
 
-function courseplay.utils.setXML(File, node, attribute, value, val_type, match_attr, match_attr_value, match_attr_type)
+function courseplay.utils.setXML(File, node, attribute, value, valueType, match_attr, match_attr_value, match_attr_type)
 	-- this function is not meant do be called in loops as it is rather slow: 
-	-- 1) due to the loadstring function.
-	-- 2) it is searched for the node everytime the function is called.
+	-- it is searched for the node everytime the function is called.
 	-- Use setMultipleXML instead.
-	attribute = attribute or ''
-	val_type = val_type or 'Int'
-	match_attr = match_attr or ''
-	match_attr_value = match_attr_value or ''
-	match_attr_type = match_attr_type or 'Int'
+	attribute = attribute or '';
+	valueType = valueType or 'Int';
+	match_attr = match_attr or '';
+	match_attr_value = match_attr_value or '';
+	match_attr_type = match_attr_type or 'Int';
 	
 	if attribute ~= '' then
-		attribute = '#' .. attribute
-	end
+		attribute = '#' .. attribute;
+	end;
+
 	if match_attr ~= '' and match_attr_value ~= '' then
-		local i = courseplay.utils.findXMLNodeByAttr(File, node, match_attr, match_attr_value, match_attr_type)
-		if i < 0 then i = -i end
-		assert(loadstring('setXML' .. val_type .. '(...)'))(File, string.format(node .. '(%d)' .. attribute, i), value)
+		local i = courseplay.utils.findXMLNodeByAttr(File, node, match_attr, match_attr_value, match_attr_type);
+		if i < 0 then i = -i end;
+		courseplay.prmSetXMLFn[valueType](File, ('%s(%d)%s'):format(node, i, attribute), value);
 	else
-		assert(loadstring('setXML' .. val_type .. '(...)'))(File, node .. attribute, value)
-	end
-end
+		courseplay.prmSetXMLFn[valueType](File, node .. attribute, value);
+	end;
+end;
 
 function courseplay.utils.setMultipleXML(File, node, values, types)
 -- function to save multiple attributes (and to the node itself) of one node
@@ -568,32 +528,25 @@ function courseplay.utils.setMultipleXML(File, node, values, types)
 -- to write into the node directly set attribute = '_node_'
 -- types is a table of the form:
 -- {attribute1 = type1, attribute2 = type2, ...}; type1 is a string (e.g. 'Int')
--- attributes with no type in the types table will be skipped.	
+-- attributes with no type in the types table will be skipped.
 	for attribute, value in pairs(values) do
-		val_type = types[attribute]
-		
-		if val_type ~= nil then
-			
+		local valueType = types[attribute]
+
+		if valueType ~= nil then
 			if attribute ~= '_node_' then
 				attribute = '#' .. attribute
 			else
 				attribute = ''
 			end
-		
-			if val_type == 'Int' then
-				setXMLInt(File, node .. attribute, value)
-			elseif val_type == 'String' then
-				setXMLString(File, node .. attribute, value)
-			elseif val_type == 'Float' then
-				setXMLFloat(File, node .. attribute, value)
-			elseif val_type == 'Bool' then
-				setXMLBool(File, node .. attribute, value)
+
+			if value ~= nil and courseplay.prmSetXMLFn[valueType] ~= nil then
+				courseplay.prmSetXMLFn[valueType](File, node .. attribute, value);
 			else
 				-- Error?!
 				print('could not save attribute: ' .. attribute)
 			end
 		end -- end if not skip then
-	end	 -- end for k, v in pairs(values) do
+	end -- end for k, v in pairs(values) do
 end
 
 function courseplay.utils.setMultipleXMLNodes(File, root_node, node_name , values, types, unique_nodes)
@@ -640,45 +593,26 @@ function courseplay:setCustomTimer(vehicle, timerName, seconds)
 	vehicle.cp.timers[timerName] = vehicle.timer + (seconds * 1000);
 end;
 function courseplay:timerIsThrough(vehicle, timerName, defaultToBool)
-	if vehicle.cp.timers[timerName] == nil then
+	local timer = vehicle.cp.timers[timerName];
+	if timer == nil then
 		return Utils.getNoNil(defaultToBool, true);
 	end;
-	return vehicle.timer > vehicle.cp.timers[timerName];
+	return vehicle.timer > timer;
 end;
-
---[[TODO (Jakob): delete when new custom spec fn is made sure to always work correctly
-function courseplay:hasSpecialization(vehicle, specClassName)
-	-- real customEnvironment for MoreRealisticDLCs
-	if vehicle.typeName:lower():find('morerealisticdlcs.') then
-		local customEnvironment = Utils.splitString('.', vehicle.typeName)[1];
-		specClassName = ('%s.%s'):format(customEnvironment, specClassName);
-
-	-- default customEnvironment
-	elseif vehicle.customEnvironment ~= nil then
-		specClassName = ('%s.%s'):format(vehicle.customEnvironment, specClassName);
-	end;
-
-	local spec;
-	for k,v in pairs(SpecializationUtil.specializations) do
-		if v.className == specClassName then
-			spec = SpecializationUtil.getSpecialization(k);
-			break;
-		end;
-	end;
-
-	if spec ~= nil then
-		if SpecializationUtil.hasSpecialization(spec, VehicleTypeUtil.vehicleTypes[vehicle.typeName].specializations) then -- We got the specialization class now, now checking if it's on the vehicle
-			return true;
-		end;
-	end;
-
-	return false;
+function courseplay:getCustomTimerExists(vehicle, timerName)
+	return vehicle.cp.timers[timerName] ~= nil;
 end;
-]]
+function courseplay:resetCustomTimer(vehicle, timerName, setToNil)
+	if setToNil then
+		vehicle.cp.timers[timerName] = nil;
+	else
+		vehicle.cp.timers[timerName] = 0.0;
+	end;
+end;
 
 function courseplay:getDriveDirection(node, x, y, z)
 	local lx, ly, lz = worldToLocal(node, x, y, z)
-	local length = Utils.vector3Length(lx,ly,lz)
+	local length = MathUtil.vector3Length(lx,ly,lz)
 	if length > 0 then
 		lx = lx / length
 		lz = lz / length
@@ -686,121 +620,6 @@ function courseplay:getDriveDirection(node, x, y, z)
 	end
 	return lx,ly,lz
 end
-
---UTF-8: ALLOWED CHARACTERS and NORMALIZATION
---src: ASCII Table - Decimal (Base 10) Values @ http://www.parse-o-matic.com/parse/pskb/ASCII-Chart.htm
---src: http://en.wikipedia.org/wiki/List_of_Unicode_characters
-function courseplay:getAllowedCharacters()
-	local allowedSpan = { from = 32, to = 591 };
-	local prohibitedUnicodes = { [34] = true, [39] = true, [94] = true, [96] = true, [215] = true, [247] = true };
-	for unicode=127,190 do
-		prohibitedUnicodes[unicode] = true;
-	end;
-
-	local result = {};
-	for unicode=allowedSpan.from,allowedSpan.to do
-		prohibitedUnicodes[unicode] = prohibitedUnicodes[unicode] or false;
-		result[unicode] = not prohibitedUnicodes[unicode] and getCanRenderUnicode(unicode);
-		if courseplay.debugChannels[8] and getCanRenderUnicode(unicode) then
-			print(string.format('allowedCharacters[%d]=%s (%q) (prohibited=%s, getCanRenderUnicode()=true)', unicode, tostring(result[unicode]), unicodeToUtf8(unicode), tostring(prohibitedUnicodes[unicode])));
-		end;
-	end;
-
-	return result;
-end;
-
-function courseplay:getUtf8normalization()
-	local result = {};
-
-	local normalizationSpans = {
-		a  = { {192,195}, 197, {224,227}, 229, {256,261} },
-		ae = { 196, 198, 228, 230 },
-		c  = { 199, 231, {262,269} },
-		d  = { {270,273} },
-		e  = { {200,203}, {232,235}, {274,283} },
-		g  = { {284,291} },
-		h  = { {292,295} },
-		i  = { {204,207}, {236,239}, {296,307} },
-		j  = { {308,309} },
-		k  = { {310,312} },
-		l  = { {313,322} },
-		n  = { 209, 241, {323,331} },
-		o  = { {210,213}, {242,245}, {332,337} },
-		oe = { 214, 216, 246, 248, 338, 339 },
-		r  = { {340,345} },
-		s  = { {346,353}, 383 },
-		ss = { 223 },
-		t  = { {354,359} },
-		u  = { {217,219}, {249,251}, {360,371} },
-		ue = { 220, 252 },
-		w  = { 372, 373 },
-		y  = { 221, 253, 255, {374,376} },
-		z  = { {377,382} }
-	};
-
-	--[[
-	local test = { 197, 229, 216, 248, 198, 230 };
-	for _,unicode in pairs(test) do
-		print(string.format("%q: getCanRenderUnicode(%d)=%s", unicodeToUtf8(unicode), unicode, tostring(getCanRenderUnicode(unicode))));
-	end;
-	]]
-
-	for normal,unicodes in pairs(normalizationSpans) do
-		for _,data in pairs(unicodes) do
-			if type(data) == "number" then
-				local utf8 = unicodeToUtf8(data);
-				result[utf8] = normal;
-				if courseplay.debugChannels[8] and getCanRenderUnicode(data) then
-					print(string.format("courseplay.utf8normalization[%q] = %q", utf8, normal));
-				end;
-			elseif type(data) == "table" then
-				for unicode=data[1],data[2] do
-					local utf8 = unicodeToUtf8(unicode);
-					result[utf8] = normal;
-					if courseplay.debugChannels[8] and getCanRenderUnicode(unicode) then
-						print(string.format("courseplay.utf8normalization[%q] = %q", utf8, normal));
-					end;
-				end;
-			end;
-		end;
-	end;
-
-	return result;
-end;
-
-
-function courseplay:normalizeUTF8_BAK(str)
-	local normal = str;
-	if str:len() ~= utf8Strlen(str) then --special char in str
-		courseplay:debug(string.format("%q: has special char, normal = %q", str, str:gsub("(..?)", courseplay.utf8normalization)), 8);
-		normal = str:gsub("(..?)", courseplay.utf8normalization);
-	end;
-
-	courseplay:debug(string.format("normalizeUTF8(%q): %q", str, normal), 8);
-	return normal:lower();
-end;
-
-
-function courseplay:normalizeUTF8(str)
-	local len = str:len();
-	local utfLen = utf8Strlen(str);
-	courseplay:debug(string.format("str %q: len=%d, utfLen=%d", str, len, utfLen), 8);
-
-	if len ~= utfLen then --special char in str
-		local result = "";
-		for i=0,utfLen-1 do
-			local char = utf8Substr(str,i,1);
-			courseplay:debug(string.format("\tchar=%q, replaceChar=%q", char, tostring(courseplay.utf8normalization[char])), 8);
-
-			local clean = courseplay.utf8normalization[char] or char:lower();
-			result = result .. clean;
-		end;
-		courseplay:debug(string.format("normalizeUTF8(%q) --> clean=%q", str, result), 8);
-		return result;
-	end;
-
-	return str:lower();
-end;
 
 function courseplay:checkAndPrintChange(vehicle, variable, VariableNameString)
 	if vehicle.cp.checkTable == nil then
@@ -815,7 +634,7 @@ function courseplay:checkAndPrintChange(vehicle, variable, VariableNameString)
 	end
 end;
 
-function courseplay.utils:hasVarChanged(vehicle, variableName, direct)
+function courseplay.utils:hasVarChanged(vehicle, variableName, direct) 
 	if direct == nil then direct = false; end;
 	if vehicle.cp.varMemory == nil then
 		vehicle.cp.varMemory = {};
@@ -868,6 +687,7 @@ function courseplay.utils:getFnCallPath(numPathSteps)
 end;
 
 function courseplay.utils:getFileNameFromPath(filePath)
+	if not filePath then return 'N/A' end
 	local fileName = filePath;
 
 	local idx = filePath:match('^.*()/'); -- check for last forward slash
@@ -875,7 +695,7 @@ function courseplay.utils:getFileNameFromPath(filePath)
 		idx = filePath:match('^.*()\\'); -- check for last backward slash
 	end;
 	if idx then
-		fileName = filePath:sub(idx + 1, 500);
+		fileName = filePath:sub(idx + 1);
 	end;
 
 	return fileName;
@@ -884,6 +704,14 @@ end;
 function courseplay:loc(key)
 	return courseplay.locales[key] or key;
 end;
+
+function courseplay:getSpeedMeasuringUnit()
+	return g_i18n:getSpeedMeasuringUnit()
+end
+
+function courseplay:getMeasuringUnit()
+	return g_gameSettings.useMiles and g_i18n:getText('unit_miles') or g_i18n:getText('unit_km');
+end
 
 function courseplay.utils:crossProductQuery(a, b, c, useC)
 	-- returns:
@@ -918,7 +746,7 @@ function courseplay.utils:crossProductQuery(a, b, c, useC)
 
 	local delta = (b[x] - a[x]) * (c[z] - a[z]) - (b[z] - a[z]) * (c[x] - a[x]);
 
-	-- possible to use Utils.sign(): return Utils.sign(delta) * -1;
+	-- possible to use MathUtil.sign(): return MathUtil.sign(delta) * -1;
 	if delta > 0 then
 		return -1;
 	elseif delta < 0 then
@@ -932,26 +760,22 @@ function courseplay:getRelativePointDirection(pp, cp, np, useC)
 	if pp == nil or cp == nil or np == nil then return nil; end;
 	if useC == nil then useC = true; end;
 
-	local dx1, dz1 = courseplay.generation:getPointDirection(pp, cp, useC);
-	local dx2, dz2 = courseplay.generation:getPointDirection(cp, np, useC);
+	local dx1, dz1 = courseplay:getPointDirection(pp, cp, useC);
+	local dx2, dz2 = courseplay:getPointDirection(cp, np, useC);
 
-	local rot1 = Utils.getYRotationFromDirection(dx1, dz1);
-	local rot2 = Utils.getYRotationFromDirection(dx2, dz2);
+	local rot1 = MathUtil.getYRotationFromDirection(dx1, dz1);
+	local rot2 = MathUtil.getYRotationFromDirection(dx2, dz2);
 
 	local rotDelta = rot1 - rot2; --TODO: rot2 - rot1 ?
 	
-	return Utils.getDirectionFromYRotation(rotDelta);
+	return MathUtil.getDirectionFromYRotation(rotDelta);
 end;
 
 function courseplay:getObjectName(object, xmlFile)
 	-- if object.name ~= nil the return object.name; end;
-
-	if object.cp and (object.cp.hasSpecializationPathVehicle or object.cp.hasSpecializationTrafficVehicle) then
-		return 'TrafficVehicle_' .. tostring(object.rootNode);
-	end;
-
+	
 	if object.configFileName then
-		local storeItem = StoreItemsUtil.storeItemsByXMLFilename[object.configFileName:lower()];
+		local storeItem = g_storeManager:getItemByXMLFilename(object.configFileName);
 		if storeItem and storeItem.name then
 			return storeItem.name;
 		end;
@@ -971,34 +795,455 @@ function courseplay:getObjectName(object, xmlFile)
 	return courseplay:loc('UNKNOWN') .. '_' .. tostring(object.rootNode);
 end;
 
-function courseplay:getMoreRealisticVersion()
-	if not courseplay.moreRealisticInstalled then
-		return nil;
-	end;
-
-	local modItem = ModsUtil.findModItemByModName(RealisticUtils.modName);
-	if modItem and modItem.version then
-		local versionSplit = table.map(Utils.splitString('.', modItem.version), tonumber);
-		versionSplit[3] = versionSplit[3] or 0;
-		return tonumber(('%d.%02d%02d'):format(versionSplit[1], versionSplit[2], versionSplit[3]));
-	end;
-
-	return 0;
-end;
-
 function courseplay:getRealWorldRotation(node, direction)
 	if not direction then direction = 1 end;
 	local x,_,z = localDirectionToWorld(node, 0, 0, direction);
-	return Utils.getYRotationFromDirection(x, z);
+	return MathUtil.getYRotationFromDirection(x, z);
 end;
 
 function courseplay:getWorldDirection(fromX, fromY, fromZ, toX, toY, toZ)
 	-- NOTE: if only 2D is needed, pass fromY and toY as 0
 	local wdx, wdy, wdz = toX - fromX, toY - fromY, toZ - fromZ;
-	local dist = Utils.vector3Length(wdx, wdy, wdz); -- length of vector
+	local dist = MathUtil.vector3Length(wdx, wdy, wdz); -- length of vector
 	if dist and dist > 0.01 then
 		wdx, wdy, wdz = wdx/dist, wdy/dist, wdz/dist; -- if not too short: normalize
 		return wdx, wdy, wdz, dist;
 	end;
 	return 0, 0, 0, 0;
 end;
+
+function courseplay.utils:setOverlayUVsSymmetric(overlay, col, line, numCols, numLines)
+	if overlay.overlayId and overlay.currentUVs == nil or overlay.currentUVs ~= { col, line, numCols, numLines } then
+		local bottomY = 1 - line / numLines;
+		local topY = bottomY + 1 / numLines;
+		local leftX = (col - 1) / numCols;
+		local rightX = leftX + 1 / numCols;
+		setOverlayUVs(overlay.overlayId, leftX,bottomY, leftX,topY, rightX,bottomY, rightX,topY);
+		overlay.currentUVs = { col, line, numCols, numLines };
+	end;
+end;
+
+function courseplay.utils:setOverlayUVsPx(overlay, UVs, textureSizeX, textureSizeY)
+	if overlay.overlayId and overlay.currentUVs == nil or overlay.currentUVs ~= UVs then
+		local leftX, bottomY, rightX, topY = unpack(UVs);
+
+		local fromTop = false;
+		if topY < bottomY then
+			fromTop = true;
+		end;
+		local leftXNormal = leftX / textureSizeX;
+		local rightXNormal = rightX / textureSizeX;
+		local bottomYNormal = bottomY / textureSizeY;
+		local topYNormal = topY / textureSizeY;
+		if fromTop then
+			bottomYNormal = 1 - bottomYNormal;
+			topYNormal = 1 - topYNormal;
+		end;
+		setOverlayUVs(overlay.overlayId, leftXNormal,bottomYNormal, leftXNormal,topYNormal, rightXNormal,bottomYNormal, rightXNormal,topYNormal);
+		overlay.currentUVs = UVs;
+	end;
+end;
+
+function courseplay.utils:roundToLowerInterval(num, idp)
+	return floor(num / idp) * idp;
+end;
+
+function courseplay.utils:roundToUpperInterval(num, idp)
+	return ceil(num / idp) * idp;
+end;
+
+function courseplay.utils:getColorFromPct(pct, colorMap, step)
+	if colorMap[pct] then
+		return unpack(colorMap[pct]);
+	end;
+
+	local lower = self:roundToLowerInterval(pct, step);
+	local upper = self:roundToUpperInterval(pct, step);
+
+	local alpha = (pct - lower) / step;
+	return MathUtil.vector3ArrayLerp(colorMap[lower], colorMap[upper], alpha);
+end;
+
+-- 2D course
+function courseplay.utils:getCourseDimensions(poly)
+	local xMin, yMin = huge, huge;
+	local xMax, yMax = -huge, -huge;
+	for _,point in pairs(poly) do
+		xMin = min(xMin, point.x or point.cx);
+		yMin = min(yMin, point.z or point.cz);
+		xMax = max(xMax, point.x or point.cx);
+		yMax = max(yMax, point.z or point.cz);
+	end;
+	local span = max(xMax-xMin,yMax-yMin);
+
+	return { xMin = xMin, xMax = xMax, yMin = yMin, yMax = yMax, span = span };
+end;
+
+function courseplay.utils:scalePlotField2D(x, y)
+	local xRes = CpManager.course2dPlotField.x + x * CpManager.course2dPlotField.width;
+	local yRes = CpManager.course2dPlotField.y + y * CpManager.course2dPlotField.height;
+	return xRes, yRes
+end;
+
+function courseplay.utils:det(x1, y1, x2, y2)
+	return x1 * y2 - y1 * x2;
+end;
+
+function courseplay.utils:removeCollinearPoints(poly, epsilon)
+	local function pointsAreCollinear(p, q, r, eps)
+		return abs(self:det(q.cx-p.cx, q.cz-p.cz,    r.cx-p.cx, r.cz-p.cz)) <= (eps or 1e-32)
+	end
+
+	local res = self.table.copy(poly);
+	res[1].origIndex = 1;
+	res[#poly].origIndex = #poly;
+	for k=#poly-1,2,-1 do
+		res[k].origIndex = k;
+		if pointsAreCollinear(res[k+1], res[k], res[k-1], epsilon) then
+			table.remove(res,k)
+		end;
+	end;
+
+	return res;
+end;
+
+function courseplay.utils:worldCoordsTo2D(vehicle, worldX, worldZ)
+	local x =     (worldX - vehicle.cp.course2dDimensions.xMin) / vehicle.cp.course2dDimensions.span;
+	local y = 1 - (worldZ - vehicle.cp.course2dDimensions.yMin) / vehicle.cp.course2dDimensions.span;
+	x, y = self:scalePlotField2D(x, y);
+	-- x = courseplay.hud:getFullPx(x, 'x');
+	-- y = courseplay.hud:getFullPx(y, 'y');
+
+	return x, y;
+end;
+
+function courseplay.utils:update2dCourseBackgroundPos(vehicle, mouseX, mouseY)
+	local dx = mouseX - CpManager.course2dDragDropMouseDown[1];
+	local dy = mouseY - CpManager.course2dDragDropMouseDown[2];
+
+	if vehicle.cp.course2dPdaMapOverlay then
+		vehicle.cp.course2dPdaMapOverlay:setColor(1,0,0,0.6);
+		vehicle.cp.course2dPdaMapOverlay:setPosition(vehicle.cp.course2dPdaMapOverlay.origPos[1] + dx, vehicle.cp.course2dPdaMapOverlay.origPos[2] + dy)
+	else
+		setOverlayColor(CpManager.course2dPolyOverlayId, 1,0,0,0.6);
+		vehicle.cp.course2dBackground.x = vehicle.cp.course2dBackground.origPos[1] + dx;
+		vehicle.cp.course2dBackground.y = vehicle.cp.course2dBackground.origPos[2] + dy;
+	end;
+end;
+
+function courseplay.utils:move2dCoursePlotField(vehicle, mouseX, mouseY)
+	-- reset background color
+	if vehicle.cp.course2dPdaMapOverlay then
+		vehicle.cp.course2dPdaMapOverlay:setColor(1, 1, 1, CpManager.course2dPdaMapOpacity);
+	end;
+
+	local dx = mouseX - CpManager.course2dDragDropMouseDown[1];
+	local dy = mouseY - CpManager.course2dDragDropMouseDown[2];
+
+	-- update plot position
+	if dx ~= 0 or dy ~= 0 then
+		local newX = MathUtil.clamp(CpManager.course2dPlotPosX + dx, 0 + CpManager.course2dPlotField.width  * 0.05, 1 - CpManager.course2dPlotField.width  * 1.05); -- 5% padding
+		local newY = MathUtil.clamp(CpManager.course2dPlotPosY + dy, 0 + CpManager.course2dPlotField.height * 0.05, 1 - CpManager.course2dPlotField.height * 1.05); -- 5% padding
+		-- print(('move2dCoursePlotField(): dx=%.3f, dy=%.3f -> newX=%.3f, newY=%.3f'):format(dx, dy, newX, newY));
+
+		CpManager.course2dPlotPosX = newX;
+		CpManager.course2dPlotPosY = newY;
+		CpManager.course2dPlotField.x = CpManager.course2dPlotPosX;
+		CpManager.course2dPlotField.y = CpManager.course2dPlotPosY;
+
+		-- update 2D data for all vehicles
+		for k,veh in pairs(g_currentMission.enterables) do
+			if veh.hasCourseplaySpec then
+				veh.cp.course2dUpdateDrawData = true;
+			end;
+		end;
+	end;
+
+	-- reset data
+	CpManager.course2dDragDropMouseDown = nil;
+end;
+
+function courseplay:setupCourse2dData(vehicle)
+	vehicle.cp.course2dDrawData = nil;
+	if vehicle.cp.numWaypoints < 1 then return; end;
+
+	vehicle.cp.course2dDimensions = courseplay.utils:getCourseDimensions(vehicle.Waypoints);
+	local bBox = vehicle.cp.course2dDimensions;
+	local pxSize = 2;  -- thickness of line in pixels
+	local height = pxSize / g_screenHeight;
+
+	local bgPadding = 0.05 * bBox.span;
+	local bgX1, bgY1 = courseplay.utils:worldCoordsTo2D(vehicle, bBox.xMin - bgPadding, bBox.yMin - bgPadding);
+	local bgX2, bgY2 = courseplay.utils:worldCoordsTo2D(vehicle, bBox.xMax + bgPadding, bBox.yMax + bgPadding);
+	local bgW, bgH = bgX2 - bgX1, abs(bgY2 - bgY1);
+
+	vehicle.cp.course2dBackground = {
+		x = bgX1,
+		y = bgY2, -- seems wrong, but is correct, as [3D] topZ < bottomZ, but [2D] topY > bottomY
+		width = bgW,
+		height = bgH,
+		tractorVisAreaMinX = bgX1,
+		tractorVisAreaMaxX = bgX2,
+		tractorVisAreaMinY = bgY2,
+		tractorVisAreaMaxY = bgY1
+	};
+
+	-- PDA MAP BG
+	if vehicle.cp.course2dPdaMapOverlay then
+		local leftX	  = bBox.xMin - bgPadding + g_currentMission.hud.ingameMap.worldCenterOffsetX;
+		local bottomY = bBox.yMax + bgPadding + g_currentMission.hud.ingameMap.worldCenterOffsetZ;
+		local rightX  = bBox.xMax + bgPadding + g_currentMission.hud.ingameMap.worldCenterOffsetX;
+		local topY	  = bBox.yMin - bgPadding + g_currentMission.hud.ingameMap.worldCenterOffsetZ;
+		courseplay.utils:setOverlayUVsPx(vehicle.cp.course2dPdaMapOverlay, { leftX, bottomY, rightX, topY }, g_currentMission.hud.ingameMap.worldSizeX, g_currentMission.hud.ingameMap.worldSizeZ);
+
+		vehicle.cp.course2dPdaMapOverlay:setPosition(vehicle.cp.course2dBackground.x, vehicle.cp.course2dBackground.y);
+		vehicle.cp.course2dPdaMapOverlay:setDimension(vehicle.cp.course2dBackground.width, vehicle.cp.course2dBackground.height);
+	end;
+
+	vehicle.cp.course2dDrawData = {};
+	local epsilon = 2; -- orig: 0.001, also ok: 0.5
+	local reducedWaypoints = courseplay.utils:removeCollinearPoints(vehicle.Waypoints, epsilon);
+	local numReducedPoints = #reducedWaypoints;
+
+	local np, startX, startY, endX, endY, dx, dz, dx2D, dy2D, width, rotation, r, g, b;
+	for i,wp in ipairs(reducedWaypoints) do
+		np = i < numReducedPoints and reducedWaypoints[i + 1] or reducedWaypoints[1];
+
+		startX, startY = courseplay.utils:worldCoordsTo2D(vehicle, wp.cx, wp.cz);
+		endX, endY	   = courseplay.utils:worldCoordsTo2D(vehicle, np.cx, np.cz);
+
+		dx2D = endX - startX;
+		dy2D = (endY - startY) / g_screenAspectRatio;
+		width = MathUtil.vector2Length(dx2D, dy2D);
+
+		dx = np.cx - wp.cx;
+		dz = np.cz - wp.cz;
+		rotation = MathUtil.getYRotationFromDirection(dx, dz) - pi * 0.5;
+
+		r, g, b = courseplay.utils:getColorFromPct(100 * wp.origIndex / vehicle.cp.numWaypoints, CpManager.course2dColorTable, CpManager.course2dColorPctStep);
+
+		vehicle.cp.course2dDrawData[i] = {
+			x = startX;
+			y = startY;
+			width = width;
+			height = height;
+			rotation = rotation;
+			color = { r, g, b, 1 };
+		};
+	end;
+
+	vehicle.cp.course2dUpdateDrawData = false;
+end;
+
+function courseplay:drawCourse2D(vehicle, doLoop)
+	-- dynamically update the data (when drag + drop happens)
+	if vehicle.cp.course2dUpdateDrawData then
+		-- print(('%s: course2dUpdateDrawData==true -> call setupCourse2dData()'):format(nameNum(vehicle)));
+		courseplay:setupCourse2dData(vehicle);
+	end;
+
+	if not vehicle.cp.course2dDrawData then
+		return;
+	end;
+
+	-- background
+	local bg = vehicle.cp.course2dBackground;
+	if vehicle.cp.course2dPdaMapOverlay then
+		vehicle.cp.course2dPdaMapOverlay:render();
+	else
+		if not CpManager.course2dDragDropMouseDown then
+			setOverlayColor(CpManager.course2dPolyOverlayId, 0,0,0,0.6);
+		end;
+		renderOverlay(CpManager.course2dPolyOverlayId, bg.x, bg.y, bg.width, bg.height);
+	end;
+
+	if CpManager.course2dDragDropMouseDown ~= nil then -- drag and drop mode -> only render background
+		return;
+	end;
+
+	-- course
+	local numPoints = #vehicle.cp.course2dDrawData;
+	local r,g,b,a;
+	for i,data in ipairs(vehicle.cp.course2dDrawData) do
+		if not doLoop and i == numPoints then
+			break;
+		end;
+
+		r,g,b,a = unpack(data.color);
+		setOverlayColor(CpManager.course2dPolyOverlayId, r,g,b,a);
+
+		setOverlayRotation(CpManager.course2dPolyOverlayId, data.rotation, 0, 0);
+
+		renderOverlay(CpManager.course2dPolyOverlayId, data.x, data.y, data.width, data.height);
+	end;
+	setOverlayRotation(CpManager.course2dPolyOverlayId, 0, 0, 0); -- reset overlay rotation
+
+
+	-- render vehicle position
+	local ovl = CpManager.course2dTractorOverlay;
+	local worldX,_,worldZ = getWorldTranslation(vehicle.rootNode);
+	if worldX ~= vehicle.cp.course2dTranslationX or worldZ ~= vehicle.cp.course2dTranslationZ then
+		vehicle.cp.course2dTranslationX = worldX;
+		vehicle.cp.course2dTranslationZ = worldZ;
+		vehicle.cp.course2dTranslationX2D, vehicle.cp.course2dTranslationZ2D = courseplay.utils:worldCoordsTo2D(vehicle, worldX, worldZ);
+		ovl:setPosition(vehicle.cp.course2dTranslationX2D - ovl.width * 0.5, vehicle.cp.course2dTranslationZ2D - ovl.height * 0.5);
+	end;
+
+	local x, y = vehicle.cp.course2dTranslationX2D, vehicle.cp.course2dTranslationZ2D;
+	if x < bg.tractorVisAreaMinX or x > bg.tractorVisAreaMaxX or y < bg.tractorVisAreaMinY or y > bg.tractorVisAreaMaxY then
+		-- outside of background area -> abort
+		return;
+	end;
+
+	local dx,_,dz = localDirectionToWorld(vehicle.cp.directionNode or vehicle.rootNode, 0, 0, 1);
+	if dx ~= vehicle.cp.course2dDirectionX or dz ~= vehicle.cp.course2dDirectionZ then
+		vehicle.cp.course2dDirectionX = dx;
+		vehicle.cp.course2dDirectionZ = dz;
+		local rotation = MathUtil.getYRotationFromDirection(dx, dz) - pi * 0.5;
+		ovl:setRotation(rotation, ovl.width * 0.5, ovl.height * 0.5);
+	end;
+
+	ovl:render();
+end;
+
+function courseplay.utils:rgbToNormal(r, g, b, a)
+	if a then
+		return { r/255, g/255, b/255, a };
+	end;
+
+	return { r/255, g/255, b/255 };
+end;
+
+function courseplay:sekToTimeFormat(numSec)
+	local nSeconds = numSec
+	local nHours = math.floor(nSeconds/3600);
+	local nMins = math.floor(nSeconds/60 - (nHours*60));
+	local nSecs = math.floor(nSeconds - nHours*3600 - nMins *60);
+	local timeTable = {}
+	if nSeconds == 0 then
+		timeTable = {
+					nHours = 0;
+					nMins = 0;
+					nSecs = 0;
+					}
+			return timeTable
+	end
+	timeTable = {
+					nHours = nHours;
+					nMins = nMins;
+					nSecs = nSecs;
+					
+					}
+	return timeTable	
+end
+
+
+local excludeTables = {
+	["attacherVehicle"] 		= true,
+	["currentSelection"] 		= true,
+	["selectionObject"] 		= true,
+	["selectableObjects"] 		= true,
+	["modifierTargetObject"] 	= true
+}
+function courseplay:printMeThisTable(t,level,maxlevel,upperPath)
+	-- If alreadyPrinted is not defined, define it.
+	if not courseplay.alreadyPrinted then courseplay.alreadyPrinted = {} end;
+
+	local stepWidth = 4
+	local spacer = math.max(1,level*stepWidth)
+	local lowSpacer = math.max(1,spacer-stepWidth)
+	local printSpace =""
+	local printLowSpace = ""
+	local nextLevel = level+1;
+	for i=1,spacer do
+		printSpace = printSpace.." ";
+	end
+	for i=1,lowSpacer do
+		printLowSpace = printLowSpace.." ";
+	end
+	if level == 0 then
+		print(upperPath..":")
+		print("[")
+	else
+		print(printLowSpace.."[")
+	end
+	if courseplay.alreadyPrinted[t] then
+		print(printSpace.."already printed")
+	else
+		for index,value in pairs(t)do
+			local newPath = upperPath.."."..tostring(index)
+			if type(value) =='table' and nextLevel<=maxlevel then
+				if excludeTables[tostring(index)] then
+					print(string.format("%s%s:(%s -> Table Excluded)",printSpace,tostring(newPath),tostring(value)));
+				else
+					print(string.format("%s%s:(%s)",printSpace,tostring(newPath),tostring(value)))
+					courseplay:printMeThisTable(value,nextLevel,maxlevel,newPath)
+				end;
+			else
+				print(printSpace..string.format("%s:%s",tostring(index),tostring(value)))
+			end
+		end
+	end
+	courseplay.alreadyPrinted[t] = true;
+	if level == 0 then
+		print("]")
+	else
+		print(printLowSpace.."]")
+	end
+
+	-- We are done printing, so clear the alreadyPrinted table.
+	if level == 0 then
+		courseplay.alreadyPrinted = {};
+	end;
+end
+
+
+function courseplay:segmentsIntersection(A1x, A1y, A2x, A2y, B1x, B1y, B2x, B2y) --@src: http://stackoverflow.com/questions/563198/how-do-you-detect-where-two-line-segments-intersect#comment19248344_1968345
+	local s1_x, s1_y, s2_x, s2_y;
+	s1_x = A2x - A1x;
+	s1_y = A2y - A1y;
+	s2_x = B2x - B1x;
+	s2_y = B2y - B1y;
+
+	local s, t;
+	s = (-s1_y * (A1x - B1x) + s1_x * (A1y - B1y)) / (-s2_x * s1_y + s1_x * s2_y);
+	t = ( s2_x * (A1y - B1y) - s2_y * (A1x - B1x)) / (-s2_x * s1_y + s1_x * s2_y);
+
+	if (s >= 0 and s <= 1 and t >= 0 and t <= 1) then
+		--Collision detected
+		local x = A1x + (t * s1_x);
+		local z = A1y + (t * s1_y);
+		return { x = x, z = z };
+	end;
+
+	--No collision
+	return nil;
+end;
+
+function courseplay:getPointDirection(cp, np)
+	-- TODO get rid of cx/cz
+	local dx, dz = (np.x or np.cx) - (cp.x or cp.cx), (np.z or np.cz) - (cp.z or cp.cz)
+	local vl = MathUtil.vector2Length(dx, dz);
+	if vl and vl > 0.0001 then
+		dx = dx / vl;
+		dz = dz / vl;
+	end;
+	return dx, dz, vl;
+end;
+
+function courseplay:getClosestPolyPoint(poly, x, z)
+	local closestDistance = math.huge;
+	local closestPointIndex;
+
+	for i=1, #(poly) do
+		local cp = poly[i];
+		local distanceToPoint = courseplay:distance(cp.cx, cp.cz, x, z);
+		if distanceToPoint < closestDistance then
+			closestDistance = distanceToPoint;
+			closestPointIndex = i;
+		end;
+	end;
+
+	return closestPointIndex;
+end;
+

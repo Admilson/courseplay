@@ -1,130 +1,178 @@
 --COURSEPLAY
-SpecializationUtil.registerSpecialization('courseplay', 'courseplay', g_currentModDirectory .. 'courseplay.lua');
+--print_r(g_fruitTypeManager)
+--print_r(g_vehicleTypeManager)
+--DebugUtil.printTableRecursively(g_fillTypeManager, '  ', 0, 10)
 
-local steerableSpec = SpecializationUtil.getSpecialization('steerable');
-local courseplaySpec = SpecializationUtil.getSpecialization('courseplay');
+g_specializationManager:addSpecialization("courseplay", "courseplay", Utils.getFilename("courseplay.lua",  g_currentModDirectory), nil)
+
+function courseplay.registerEventListeners(vehicleType)
+	--print(string.format( "courseplay:registerEventListeners(%s)",tostring(vehicleType)))
+	SpecializationUtil.registerEventListener(vehicleType, "onDraw", courseplay)
+	SpecializationUtil.registerEventListener(vehicleType, "onUpdate", courseplay)
+	SpecializationUtil.registerEventListener(vehicleType, "onUpdateTick", courseplay)
+	SpecializationUtil.registerEventListener(vehicleType, "onLoad", courseplay)
+	SpecializationUtil.registerEventListener(vehicleType, "onPostLoad", courseplay)
+	SpecializationUtil.registerEventListener(vehicleType, "onEnterVehicle", courseplay)
+	SpecializationUtil.registerEventListener(vehicleType, "onLeaveVehicle", courseplay)
+	SpecializationUtil.registerEventListener(vehicleType, "onDelete", courseplay)
+	SpecializationUtil.registerEventListener(vehicleType, "onRegisterActionEvents", courseplay)
+	SpecializationUtil.registerEventListener(vehicleType, "onPostDetachImplement", courseplay)
+	SpecializationUtil.registerEventListener(vehicleType, "onReadStream", courseplay)
+	SpecializationUtil.registerEventListener(vehicleType, "onWriteStream", courseplay)
+	SpecializationUtil.registerEventListener(vehicleType, "onReadUpdateStream", courseplay)
+	SpecializationUtil.registerEventListener(vehicleType, "onWriteUpdateStream", courseplay)
+	SpecializationUtil.registerEventListener(vehicleType, "onStartCpAIDriver",courseplay)
+	SpecializationUtil.registerEventListener(vehicleType, "onStopCpAIDriver",courseplay)
+end
+
+function courseplay.registerEvents(vehicleType)
+    SpecializationUtil.registerEvent(vehicleType, "onStartCpAIDriver")
+    SpecializationUtil.registerEvent(vehicleType, "onStopCpAIDriver")
+end
+
+function courseplay:onRegisterActionEvents(isActiveForInput, isActiveForInputIgnoreSelection)
+	--print(string.format("%s: courseplay:onRegisterActionEvents(isActiveForInput(%s) (%s), isActiveForInputIgnoreSelection(%s))",tostring(self:getName()),tostring(isActiveForInput),tostring(self:getIsActiveForInput(true, true)),tostring(isActiveForInputIgnoreSelection)))
+	if self:getIsActiveForInput(true, true) then 
+		courseplay.actionEvents = {}
+		courseplay.inputActionEventIds = {}
+		for index, action in pairs (g_gui.inputManager.nameActions) do
+			if string.match(index,'COURSEPLAY_') then
+				local _,eventId = self:addActionEvent(courseplay.actionEvents, index, self, courseplay.inputActionCallback, true, true, false, true, nil);
+				courseplay.inputActionEventIds[index] = eventId;
+				g_gui.inputManager:setActionEventTextVisibility(eventId, false)
+			end
+		end
+	end
+end
+
+if courseplay.houstonWeGotAProblem then
+	return;
+end;
+
 local numInstallationsVehicles = 0;
+local courseplaySpecName = g_currentModName .. ".courseplay"
 
-function courseplay:register()
-	for typeName,vehicleType in pairs(VehicleTypeUtil.vehicleTypes) do
-		if vehicleType then
-			for i,spec in pairs(vehicleType.specializations) do
-				if spec and spec == steerableSpec and not SpecializationUtil.hasSpecialization(courseplay, vehicleType.specializations) then
-					-- print(('\tadding Courseplay to %q'):format(tostring(vehicleType.name)));
-					table.insert(vehicleType.specializations, courseplaySpec);
-					vehicleType.hasCourseplaySpec = true;
-					vehicleType.hasSteerableSpec = true;
-					numInstallationsVehicles = numInstallationsVehicles + 1;
-					break;
-				end;
-			end;
+function courseplay:register(secondTime)
+	if secondTime then
+		print('## Courseplay: register later loaded mods:');
+		if g_company and g_company.loadingTrigger then 
+			if g_company.loadingTrigger.loadTriggerCallback then
+				g_company.loadingTrigger.loadTriggerCallback = Utils.appendedFunction(g_company.loadingTrigger.loadTriggerCallback, TriggerHandler.loadTriggerCallback);
+				print("  append TriggerHandler.loadTriggerCallback to g_company.loadingTrigger.loadTriggerCallback")
+			end
+			if g_company.loadingTrigger.onActivateObject then 
+				g_company.loadingTrigger.onActivateObject = Utils.overwrittenFunction(g_company.loadingTrigger.onActivateObject, TriggerHandler.onActivateObjectGlobalCompany)
+				print("  overwrittenFunction g_company.loadingTrigger.onActivateObject to TriggerHandler.onActivateObjectGlobalCompany")
+			end
+			if g_company.loadingTrigger.load then
+				g_company.loadingTrigger.load = Utils.overwrittenFunction(g_company.loadingTrigger.load, TriggerHandler.onLoad_GC_LoadingTriggerFix);
+				print("  overwrittenFunction TriggerHandler.onLoad_GC_LoadingTriggerFix TriggerHandler.load to g_company.loadingTrigger.load")
+			end
+		end
+	else
+		print('## Courseplay: register into vehicle types:');
+	end
+	for typeName,vehicleType in pairs(g_vehicleTypeManager.vehicleTypes) do
+		if SpecializationUtil.hasSpecialization(AIVehicle, vehicleType.specializations) and not vehicleType.specializationsByName[courseplaySpecName] then
+				print("  install courseplay into "..typeName)
+				g_vehicleTypeManager:addSpecialization(typeName, courseplaySpecName)
+				numInstallationsVehicles = numInstallationsVehicles + 1;
 		end;
 	end;
+	if secondTime then
+		print('## Courseplay: register later loaded mods: done');
+	end	
 end;
 
--- if there are any vehicles loaded *after* Courseplay, install the spec into them
-local postRegister = function(typeName, className, filename, specializationNames, customEnvironment)
-	local vehicleType = VehicleTypeUtil.vehicleTypes[typeName];
-	if vehicleType and vehicleType.specializations and not vehicleType.hasCourseplaySpec and Utils.hasListElement(specializationNames, 'steerable') then
-		table.insert(vehicleType.specializations, courseplaySpec);
-		vehicleType.hasCourseplaySpec = true;
-		vehicleType.hasSteerableSpec = true;
-		numInstallationsVehicles = numInstallationsVehicles + 1;
-	end;
-end;
-VehicleTypeUtil.registerVehicleType = Utils.appendedFunction(VehicleTypeUtil.registerVehicleType, postRegister);
-
-function courseplay:attachableLoad(xmlFile)
+function courseplay:attachablePostLoad(xmlFile)
 	if self.cp == nil then self.cp = {}; end;
+
+	if self.cp.xmlFileName == nil then
+		self.cp.xmlFileName = courseplay.utils:getFileNameFromPath(self.configFileName);
+	end;
 
 	--SET SPECIALIZATION VARIABLE
 	courseplay:setNameVariable(self);
 	courseplay:setCustomSpecVariables(self);
+
+	if courseplay.liquidManureOverloaders == nil then
+		courseplay.liquidManureOverloaders ={}
+	end
+	if self.cp.isLiquidManureOverloader then
+		courseplay.liquidManureOverloaders[self.rootNode] = self
+	end
 
 
 	--SEARCH AND SET OBJECT'S self.name IF NOT EXISTING
 	if self.name == nil then
 		self.name = courseplay:getObjectName(self, xmlFile);
 	end;
-
-	-- ATTACHABLE CHOPPER SPECIAL NODE
-	if self.cp.isPoettingerMex6 or self.cp.isPoettingerMexOK then
-		self.cp.fixedRootNode = createTransformGroup('courseplayFixedRootNode');
-		link(self.rootNode, self.cp.fixedRootNode);
-		setTranslation(self.cp.fixedRootNode, 0, 0, 0);
-		setRotation(self.cp.fixedRootNode, 0, math.rad(180), 0);
-	end;
-
-	--ADD ATTACHABLES TO GLOBAL REFERENCE LIST
-	if courseplay.thirdParty.EifokLiquidManure == nil then courseplay.thirdParty.EifokLiquidManure = {}; end;
-	if courseplay.thirdParty.EifokLiquidManure.dockingStations == nil then courseplay.thirdParty.EifokLiquidManure.dockingStations = {}; end;
-	if courseplay.thirdParty.EifokLiquidManure.hoseRefVehicles == nil then courseplay.thirdParty.EifokLiquidManure.hoseRefVehicles = {}; end;
-
-	--Zunhammer Docking Station (zunhammerDocking.i3d / ManureDocking.lua) [Eifok Team]
-	if Utils.endsWith(self.typeName, 'zhAndock') and self.cp.xmlFileName == 'zunhammerDocking.xml' then
-		self.cp.isEifokZunhammerDockingStation = true;
-		courseplay.thirdParty.EifokLiquidManure.dockingStations[self.rootNode] = self;
-
-	--HoseRef [Eifok Team]
-	elseif self.cp.hasSpecializationHoseRef then
-		self.cp.hasHoseRef = true;
-		courseplay.thirdParty.EifokLiquidManure.hoseRefVehicles[self.rootNode] = self;
-	end;
 end;
-Attachable.load = Utils.appendedFunction(Attachable.load, courseplay.attachableLoad);
+Attachable.onPostLoad = Utils.appendedFunction(Attachable.onPostLoad, courseplay.attachablePostLoad);
+
+function courseplay:articulatedAxisOnLoad()
+	-- Due to a bug in Giant's ArticulatedAxis:onLoad() maxRotation has a value in degrees instead of radians,
+	-- fix that here.
+	if self.maxRotation and self.maxRotation > math.pi then
+		print(string.format('## %s: fixing maxRotation, setting to %.0f degrees', self:getName(), self.maxRotation))
+		self.maxRotation = math.rad(self.maxRotation)
+	end
+end
+ArticulatedAxis.onLoad = Utils.appendedFunction(ArticulatedAxis.onLoad, courseplay.articulatedAxisOnLoad)
 
 function courseplay:attachableDelete()
 	if self.cp ~= nil then
-		if self.cp.isEifokZunhammerDockingStation then
-			courseplay.thirdParty.EifokLiquidManure.dockingStations[self.rootNode] = nil;
-		elseif self.cp.hasSpecializationHoseRef then
-			courseplay.thirdParty.EifokLiquidManure.hoseRefVehicles[self.rootNode] = nil;
-		end;
+		if self.cp.isLiquidManureOverloader then
+			courseplay.liquidManureOverloaders[self.rootNode] = nil
+		end
 	end;
 end;
 Attachable.delete = Utils.prependedFunction(Attachable.delete, courseplay.attachableDelete);
 
-function courseplay.vehicleLoadFinished(self)
+function courseplay.vehiclePostLoadFinished(self, superFunc, ...)
+	local loadingState = superFunc(self, ...);
+	if loadingState ~= BaseMission.VEHICLE_LOAD_OK then
+		-- something failed. Probably handle this: do not do anything else
+		-- return loadingState;
+	end
+
 	if self.cp == nil then self.cp = {}; end;
 
 	-- XML FILE NAME VARIABLE
 	if self.cp.xmlFileName == nil then
-		-- local xmlFileName = Utils.splitString('/', self.configFileName);
-		-- self.cp.xmlFileName = xmlFileName[#xmlFileName];
 		self.cp.xmlFileName = courseplay.utils:getFileNameFromPath(self.configFileName);
 	end;
 
-	--[[
-	if self.cp.typeNameSingle == nil then
-		self.cp.typeNameSingle = Utils.splitString('.', self.typeName);
-		self.cp.typeNameSingle = self.cp.typeNameSingle[#self.cp.typeNameSingle];
-	end;
-	]]
+	-- make sure every vehicle has the CP API functions
+	self.getIsCourseplayDriving = courseplay.getIsCourseplayDriving;
+	self.setIsCourseplayDriving = courseplay.setIsCourseplayDriving;
+	self.setCpVar = courseplay.setCpVar;
 
-	--Zunhammer Hose (zunhammerHose.i3d / Hose.lua) [Eifok Team]
-	if self.cp.xmlFileName == 'zunhammerHose.xml' or Utils.endsWith(self.typeName, 'zhHose') then
-		if courseplay.thirdParty.EifokLiquidManure == nil then courseplay.thirdParty.EifokLiquidManure = {}; end;
-		if courseplay.thirdParty.EifokLiquidManure.hoses == nil then courseplay.thirdParty.EifokLiquidManure.hoses = {}; end;
+	courseplay:setNameVariable(self);
 
-		self.cp.isEifokZunhammerHose = true;
-		table.insert(courseplay.thirdParty.EifokLiquidManure.hoses, self);
-		--courseplay.thirdParty.EifokLiquidManure.hoses[self.msh] = self;
-	end;
+	return loadingState;
 end;
-Vehicle.loadFinished = Utils.prependedFunction(Vehicle.loadFinished, courseplay.vehicleLoadFinished);
+
+Vehicle.loadFinished = Utils.overwrittenFunction(Vehicle.loadFinished, courseplay.vehiclePostLoadFinished);
 -- NOTE: using loadFinished() instead of load() so any other mod that overwrites Vehicle.load() doesn't interfere
+
+
+function courseplay:prePreDelete(self)
+	if self.cp and self.cp.settings and self.cp.settings.showMapHotspot ~= nil then
+		self.cp.settings.showMapHotspot:deleteMapHotspot();
+		-- combineUnloadManager
+	end
+end;
+FSBaseMission.removeVehicle = Utils.prependedFunction(FSBaseMission.removeVehicle, courseplay.prePreDelete);
+
+FieldworkAIDriver.register()
 
 function courseplay:vehicleDelete()
 	if self.cp ~= nil then
-		if self.cp.isEifokZunhammerHose then
-			for i,hose in pairs(courseplay.thirdParty.EifokLiquidManure.hoses) do
-				if hose.msh == self.msh then
-					-- table.remove(courseplay.thirdParty.EifokLiquidManure.hoses, i);
-					courseplay.thirdParty.EifokLiquidManure.hoses[i] = nil;
-					break;
-				end;
-			end;
-		end;
+		--if vehicle is a courseplayer, delete the vehicle from activeCourseplayers
+		if CpManager.activeCoursePlayers[self.rootNode] then
+			CpManager:removeFromActiveCoursePlayers(self);
+		end
 
 		-- Remove created nodes
 		if self.cp.notesToDelete and #self.cp.notesToDelete > 0 then
@@ -133,23 +181,29 @@ function courseplay:vehicleDelete()
 					delete(nodeId);
 				end;
 			end;
+			self.cp.notesToDelete = nil;
+		end;
+
+		if courseplay:isCombine(self) or courseplay:isChopper(self) then
+			g_combineUnloadManager:removeCombineFromList(self)
 		end
+
 	end;
 end;
 Vehicle.delete = Utils.prependedFunction(Vehicle.delete, courseplay.vehicleDelete);
 
-function courseplay:foldableLoad(xmlFile)
+function courseplay:foldableLoad(savegame)
 	if self.cp == nil then self.cp = {}; end;
 
 	--FOLDING PARTS STARTMOVEDIRECTION
-	local startMoveDir = getXMLInt(xmlFile, 'vehicle.foldingParts#startMoveDirection');
+	local startMoveDir = getXMLInt(self.xmlFile, 'vehicle.foldingParts#startMoveDirection');
 	if startMoveDir == nil then
-		local singleDir;
+ 		local singleDir;
 		local i = 0;
 		while true do -- go through single foldingPart entries
 			local key = string.format('vehicle.foldingParts.foldingPart(%d)', i);
-			if not hasXMLProperty(xmlFile, key) then break; end;
-			local dir = getXMLInt(xmlFile, key .. '#startMoveDirection');
+			if not hasXMLProperty(self.xmlFile, key) then break; end;
+			local dir = getXMLInt(self.xmlFile, key .. '#startMoveDirection');
 			if dir then
 				if singleDir == nil then --first foldingPart -> set singleDir
 					singleDir = dir;
@@ -171,6 +225,71 @@ end;
 Foldable.load = Utils.appendedFunction(Foldable.load, courseplay.foldableLoad);
 
 courseplay.locales = courseplay.utils.table.copy(g_i18n.texts, true);
+
+-- make l10n global so they can be used in GUI XML files directly (Thanks `Mogli!)
+for n,t in pairs( g_i18n.texts ) do
+	if string.sub( n, 1, 10 ) == "COURSEPLAY" then
+		getfenv(0).g_i18n.texts[n] = t
+	end
+end
+
 courseplay:register();
-print(string.format('### Courseplay: installed into %d vehicles', numInstallationsVehicles));
+print(string.format('### Courseplay: installed into %d vehicle types', numInstallationsVehicles));
+
+-- TODO: Remove the AIVehicleUtil.driveToPoint overwrite when the new patch goes out to fix it. (Temp fix from Giants: Emil)
+
+-- This fixes the problems with driveInDirection motor and cruise control. There is a bug some where that is setting self.rotatedTime to 0
+local originaldriveInDirection = AIVehicleUtil.driveInDirection;
+AIVehicleUtil.driveInDirection = function (self, dt, steeringAngleLimit, acceleration, slowAcceleration, slowAngleLimit, allowedToDrive, moveForwards, lx, lz, maxSpeed, slowDownFactor)
+
+	local angle = 0;
+    if lx ~= nil and lz ~= nil then
+        local dot = lz;
+		angle = math.deg(math.acos(dot));
+        if angle < 0 then
+            angle = angle+180;
+        end
+        local turnLeft = lx > 0.00001;
+        if not moveForwards then
+            turnLeft = not turnLeft;
+        end
+        local targetRotTime = 0;
+        if turnLeft then
+            --rotate to the left
+			targetRotTime = self.maxRotTime*math.min(angle/steeringAngleLimit, 1);
+        else
+            --rotate to the right
+			targetRotTime = self.minRotTime*math.min(angle/steeringAngleLimit, 1);
+        end
+		if targetRotTime > self.rotatedTime then
+			self.rotatedTime = math.min(self.rotatedTime + dt*self:getAISteeringSpeed(), targetRotTime);
+		else
+			self.rotatedTime = math.max(self.rotatedTime - dt*self:getAISteeringSpeed(), targetRotTime);
+        end
+    end
+    if self.firstTimeRun then
+        local acc = acceleration;
+        if maxSpeed ~= nil and maxSpeed ~= 0 then
+            if math.abs(angle) >= slowAngleLimit then
+                maxSpeed = maxSpeed * slowDownFactor;
+            end
+            self.spec_motorized.motor:setSpeedLimit(maxSpeed);
+            if self.spec_drivable.cruiseControl.state ~= Drivable.CRUISECONTROL_STATE_ACTIVE then
+                self:setCruiseControlState(Drivable.CRUISECONTROL_STATE_ACTIVE);
+            end
+        else
+            if math.abs(angle) >= slowAngleLimit then
+                acc = slowAcceleration;
+            end
+        end
+        if not allowedToDrive then
+            acc = 0;
+        end
+        if not moveForwards then
+            acc = -acc;
+        end
+		--FS 17 Version WheelsUtil.updateWheelsPhysics(self, dt, self.lastSpeedReal, acc, not allowedToDrive, self.requiredDriveMode);
+		WheelsUtil.updateWheelsPhysics(self, dt, self.lastSpeedReal*self.movingDirection, acc, not allowedToDrive, true)
+    end
+end
 

@@ -3,46 +3,71 @@ function courseplay:areaHasFruit(x, z, fruitType, widthX, widthZ)
 	widthX = widthX or 0.5;
 	widthZ = widthZ or 0.5;
 	if not courseplay:isField(x, z, widthX, widthZ) then
-		return false;
+		return false, nil, 0, 0;
 	end;
 
 	local density = 0;
-	if fruitType ~= nil then
-		density = Utils.getFruitArea(fruitType, x, z, x - widthX, z - widthZ, x + widthX, z + widthZ, true);
+	local totalArea = 0
+	local maxDensity = 0;
+	local maxFruitType = 0
+	if fruitType ~= nil and fruitType ~= FruitType.UNKNOWN then
+		local minHarvestable, maxHarvestable = 1, fruitType.numGrowthStates
+	
+		density, totalArea = FieldUtil.getFruitArea(x, z, x - widthX, z - widthZ, x + widthX, z + widthZ, {}, {}, fruitType, minHarvestable , maxHarvestable, 0, 0, 0,false);
 		if density > 0 then
 			--courseplay:debug(string.format("checking x: %d z %d - density: %d", x, z, density ), 3)
-			return true;
+			return true, fruitType, density, totalArea
 		end;
 	else
-		for i = 1, FruitUtil.NUM_FRUITTYPES do
-			if i ~= FruitUtil.FRUITTYPE_GRASS then
-				density = Utils.getFruitArea(i, x, z, x - widthX, z - widthZ, x + widthX, z + widthZ, true);
-				if density > 0 then
-					--courseplay:debug(string.format("checking x: %d z %d - density: %d", x, z, density ), 3)
-					return true;
-				end;
+		for i = 1, #g_fruitTypeManager.fruitTypes do
+			if i ~= g_fruitTypeManager.nameToIndex['GRASS'] and i ~= g_fruitTypeManager.nameToIndex['DRYGRASS'] then 
+				local fruitType = g_fruitTypeManager.fruitTypes[i]
+				local minHarvestable, maxHarvestable = 1, fruitType.numGrowthStates
+				--function FieldUtil.getFruitArea(startWorldX, startWorldZ, widthWorldX, widthWorldZ, heightWorldX, heightWorldZ, terrainDetailRequiredValueRanges, terrainDetailProhibitValueRanges, requiredFruitType, requiredMinGrowthState, requiredMaxGrowthState, prohibitedFruitType, prohibitedMinGrowthState, prohibitedMaxGrowthState, useWindrowed
+				density,totalArea = FieldUtil.getFruitArea(x, z, x - widthX, z - widthZ, x + widthX, z + widthZ, {}, {}, i, minHarvestable , maxHarvestable, 0, 0, 0,false);
+				if density > maxDensity then
+					maxDensity = density
+					maxFruitType = i
+				end
 			end;
+		end;
+		if maxDensity > 0 then
+			--courseplay:debug(string.format("checking x: %d z %d - density: %d", x, z, density ), 3)
+			--print("areaHasFruit: return "..tostring(maxFruitType))
+			return true, maxFruitType, maxDensity, totalArea
 		end;
 	end;
 
 	--courseplay:debug(string.format(" x: %d z %d - is really cut!", x, z ), 3)
-	return false;
+	return false, nil, 0, 0;
 end;
 
+function courseplay:initailzeFieldMod()
+    --print("courseplay:initailzeFieldMod()")
+	self.fieldMod = {}
+    self.fieldMod.modifier = DensityMapModifier:new(g_currentMission.terrainDetailId, g_currentMission.terrainDetailTypeFirstChannel, g_currentMission.terrainDetailTypeNumChannels)
+    self.fieldMod.filter = DensityMapFilter:new(self.fieldMod.modifier)
+end
+
 function courseplay:isField(x, z, widthX, widthZ)
-	widthX = widthX or 0.5;
-	widthZ = widthZ or 0.5;
-	local startWorldX, startWorldZ   = x, z;
-	local widthWorldX, widthWorldZ   = x - widthX, z - widthZ;
-	local heightWorldX, heightWorldZ = x + widthX, z + widthZ;
+    --print(string.format("running courseplay:isField(%s, %s, %s, %s)",tostring(x),tostring(z),tostring(widthX),tostring(widthZ)))
+	widthX = widthX or 0.5
+    widthZ = widthZ or 0.5
+	local startWorldX, startWorldZ   = x, z
+	local widthWorldX, widthWorldZ   = x - widthX, z - widthZ
+	local heightWorldX, heightWorldZ = x + widthX, z + widthZ
+	local y = getTerrainHeightAtWorldPos(g_currentMission.terrainRootNode, startWorldX, 1, startWorldZ)
 
-	local detailId = g_currentMission.terrainDetailId;
-	local px,pz, pWidthX,pWidthZ, pHeightX,pHeightZ = Utils.getXZWidthAndHeight(detailId, startWorldX, startWorldZ, widthWorldX, widthWorldZ, heightWorldX, heightWorldZ);
-	setDensityCompareParams(detailId, 'greater', 0, 0, 0, 0);
-	local _,area,totalArea = getDensityParallelogram(detailId, px, pz, pWidthX, pWidthZ, pHeightX, pHeightZ, g_currentMission.terrainDetailTypeFirstChannel, g_currentMission.terrainDetailTypeNumChannels);
-	setDensityCompareParams(detailId, 'greater', -1);
+	--cpDebug:drawLine(startWorldX,y+1,startWorldZ, 0, 100, 0, widthWorldX,y+1,widthWorldZ)
+	--cpDebug:drawLine(widthWorldX,y+1,widthWorldZ, 0, 100, 0, heightWorldX,y+1,heightWorldZ)
+	--cpDebug:drawLine(heightWorldX,y+1,heightWorldZ, 0, 100, 0, startWorldX,y+1,startWorldZ)
 
-	return area > 0;
+    self.fieldMod.modifier:setParallelogramWorldCoords(startWorldX, startWorldZ, widthWorldX, widthWorldZ, heightWorldX, heightWorldZ, "ppp")
+    self.fieldMod.filter:setValueCompareParams("greater", 0)
+
+    local _, area, totalArea = self.fieldMod.modifier:executeGet( self.fieldMod.filter)
+	local isField = area > 0
+	return isField, area, totalArea
 end
 
 
@@ -57,7 +82,7 @@ function courseplay:getLineHxHz(node, x1, z1, x2, z2)
 
 		-- set rotation
 		local dx, _, dz, _ = courseplay:getWorldDirection(x1, 0, z1, x2, 0, z2);
-		local rot = Utils.getYRotationFromDirection(dx, dz);
+		local rot = MathUtil.getYRotationFromDirection(dx, dz);
 		setRotation(node, 0, rot, 0);
 	end;
 
@@ -89,21 +114,24 @@ function courseplay:hasLineFruit(node, x1, z1, x2, z2, fixedFruitType)
 	end;
 	local hx, hz = courseplay:getLineHxHz(node, x1,z1, x2,z2);
 	if hx == nil or hz == nil then return; end;
-	-- print(string.format('hasLineFruit(): x1,z1=%s,%s, x2,z2=%s,%s, hx,hz=%s,%s', tostring(x1), tostring(z1), tostring(x2), tostring(z2), tostring(hx), tostring(hz)));
+	print(string.format('hasLineFruit(): x1,z1=%s,%s, x2,z2=%s,%s, hx,hz=%s,%s', tostring(x1), tostring(z1), tostring(x2), tostring(z2), tostring(hx), tostring(hz)));
 
 	if fixedFruitType then
-		local density, total = Utils.getFruitArea(fixedFruitType, x1,z1, x2,z2, hx,hz, true);
+		local minHarvestable, maxHarvestable = 1, fruitType.numGrowthStates
+		local density, total = FieldUtil.getFruitArea(x1, z1, x2, z2, hx, hz, {}, {}, fixedFruitType, minHarvestable , maxHarvestable, 0, 0, 0,false);
 		if density > 0 then
-			return true, density, fixedFruitType, FruitUtil.fruitIndexToDesc[fixedFruitType].name;
+			return true, density, fixedFruitType, g_fruitTypeManager.indexToFruitType[fixedFruitType].name --IndexToDesc[fixedFruitType].name; this might wrong conversion
 		end;
 		return false;
 	end;
 
-	for i = 1, FruitUtil.NUM_FRUITTYPES do
-		if i ~= FruitUtil.FRUITTYPE_GRASS then
-			local density, total = Utils.getFruitArea(i, x1,z1, x2,z2, hx,hz, true);
+	for i = 1, #g_fruitTypeManager.fruitTypes do
+		if i ~= g_fruitTypeManager.nameToIndex['GRASS'] and i ~= g_fruitTypeManager.nameToIndex['DRYGRASS'] then 
+			local fruitType = g_fruitTypeManager.fruitTypes[i]
+			local minHarvestable, maxHarvestable = 1, fruitType.numGrowthStates
+			local density, total = FieldUtil.getFruitArea(x1, z1, x2, z2, hx, hz, {}, {},  i, minHarvestable , maxHarvestable, 0, 0, 0,false);
 			if density > 0 then
-				local fruitName = FruitUtil.fruitIndexToDesc[i].name;
+				local fruitName = 'test' --FruitTypeManager:getFruitTypeNameByIndex(i) -- FruitUtil.fruitIndexToDesc[i].name;  this might wrong conversion
 				courseplay:debug(string.format('hasLineFruit(): fruitType %d (%s): density=%s (total=%s)', i, tostring(fruitName), tostring(density), tostring(total)), 4);
 				return true, density, i, fruitName;
 			end;
@@ -114,6 +142,7 @@ function courseplay:hasLineFruit(node, x1, z1, x2, z2, fixedFruitType)
 end;
 
 function courseplay:isLineField(node, x1, z1, x2, z2)
+	
 	if node and (x1 == nil or z1 == nil) then
 		x1, _, z1 = getWorldTranslation(node);
 	end;
@@ -125,111 +154,61 @@ function courseplay:isLineField(node, x1, z1, x2, z2)
 	local widthWorldX, widthWorldZ   = x2, z2;
 	local heightWorldX, heightWorldZ = hx, hz;
 
-	local detailId = g_currentMission.terrainDetailId;
-	local px,pz, pWidthX,pWidthZ, pHeightX,pHeightZ = Utils.getXZWidthAndHeight(detailId, startWorldX, startWorldZ, widthWorldX, widthWorldZ, heightWorldX, heightWorldZ);
-	setDensityCompareParams(detailId, 'greater', 0, 0, 0, 0);
-	local n,area,totalArea = getDensityParallelogram(detailId, px, pz, pWidthX, pWidthZ, pHeightX, pHeightZ, g_currentMission.terrainDetailTypeFirstChannel, g_currentMission.terrainDetailTypeNumChannels);
-	setDensityCompareParams(detailId, 'greater', -1);
-
+	courseplay.fields.modifier:setParallelogramWorldCoords(startWorldX, startWorldZ, widthWorldX, widthWorldZ, heightWorldX, heightWorldZ, "ppp")
+	local n,area,totalArea = courseplay.fields.modifier:executeGet(courseplay.fields.filter) -- get all where is field
 	local isField = area > 0 and area >= totalArea;
 	courseplay:debug(string.format('isLineField(): x1,z1=%.2f,%.2f, x2,z2=%.2f,%.2f, hx,hz=%.2f,%.2f -> n=%s, area=%s, totalArea=%s -> return %s', x1, z1, x2, z2, hx, hz, tostring(n), tostring(area), tostring(totalArea), tostring(isField)), 4);
 
 	return isField;
 end;
 
-
-function courseplay:check_for_fruit(vehicle, distance) --TODO (Jakob): this function isn't used anywhere anymore
-	local x, y, z = localToWorld(vehicle.cp.DirectionNode, 0, 0, distance) --getWorldTranslation(combine.aiTreshingDirectionNode);
-
-	local length = Utils.vector2Length(x, z);
-	local aiThreshingDirectionX = x / length;
-	local aiThreshingDirectionZ = z / length;
-
-	local dirX, dirZ = aiThreshingDirectionX, aiThreshingDirectionZ;
-	if dirX == nil or x == nil or dirZ == nil then
-		return 0, 0
-	end
-	local sideX, sideZ = -dirZ, dirX;
-
-	local threshWidth = 3
-
-	local sideWatchDirOffset = -8
-	local sideWatchDirSize = 3
-
-
-	local lWidthX = x - sideX * 0.5 * threshWidth + dirX * sideWatchDirOffset;
-	local lWidthZ = z - sideZ * 0.5 * threshWidth + dirZ * sideWatchDirOffset;
-	local lStartX = lWidthX - sideX * 0.7 * threshWidth;
-	local lStartZ = lWidthZ - sideZ * 0.7 * threshWidth;
-	local lHeightX = lStartX + dirX * sideWatchDirSize;
-	local lHeightZ = lStartZ + dirZ * sideWatchDirSize;
-
-	local rWidthX = x + sideX * 0.5 * threshWidth + dirX * sideWatchDirOffset;
-	local rWidthZ = z + sideZ * 0.5 * threshWidth + dirZ * sideWatchDirOffset;
-	local rStartX = rWidthX + sideX * 0.7 * threshWidth;
-	local rStartZ = rWidthZ + sideZ * 0.7 * threshWidth;
-	local rHeightX = rStartX + dirX * sideWatchDirSize;
-	local rHeightZ = rStartZ + dirZ * sideWatchDirSize;
-	local leftFruit = 0
-	local rightFruit = 0
-
-	for i = 1, FruitUtil.NUM_FRUITTYPES do
-		if i ~= FruitUtil.FRUITTYPE_GRASS then
-			leftFruit = leftFruit + Utils.getFruitArea(i, lStartX, lStartZ, lWidthX, lWidthZ, lHeightX, lHeightZ); -- TODO: add "true" to allow preparingFruit (potatoes, sugarBeet) ?
-
-			rightFruit = rightFruit + Utils.getFruitArea(i, rStartX, rStartZ, rWidthX, rWidthZ, rHeightX, rHeightZ); -- TODO: add "true" to allow preparingFruit (potatoes, sugarBeet) ?
-		end
-	end
-
-	return leftFruit, rightFruit;
-end
-
-
 function courseplay:sideToDrive(vehicle, combine, distance, switchSide)
 	local tractor = combine;
 	if courseplay:isAttachedCombine(combine) then
-		tractor = combine.attacherVehicle;
+		tractor = combine:getAttacherVehicle();
 	end;
 
 	-- COMBINE DIRECTION
-	local x, y, z = localToWorld(tractor.cp.DirectionNode, 0, 0, distance - 5);
-	local dirX, dirZ = combine.aiThreshingDirectionX, combine.aiThreshingDirectionZ;
-	if (not (combine.isAIThreshing or combine.drive)) or  combine.aiThreshingDirectionX == nil or combine.aiThreshingDirectionZ == nil or combine.acParameters ~= nil then
-		local node = combine.cp.fixedRootNode or combine.rootNode;
-		local dx,_,dz = localDirectionToWorld(node, 0, 0, 2);
-		local length = Utils.vector2Length(dx,dz);
-		dirX = dx/length;
-		dirZ = dz/length;
-	end;
-
+	local x, y, z = localToWorld(tractor.cp.directionNode, 0, 0, distance);
+	local node = combine.cp.directionNode or combine.rootNode;
+	local dx,_,dz = localDirectionToWorld(node, 0, 0, 2);
+	local length = MathUtil.vector2Length(dx,dz);
+	local dirX = dx/length;
+	local dirZ = dz/length;
 	local sideX, sideZ = -dirZ, dirX;
-	local sideWatchDirOffset = Utils.getNoNil(combine.sideWatchDirOffset, -8);
-	local sideWatchDirSize = Utils.getNoNil(combine.sideWatchDirSize, 3); -- TODO (Jakob): default AICombine value is 8
-	local selfSideWatchDirSize = Utils.getNoNil(vehicle.sideWatchDirSize, 3); -- TODO (Jakob): default AITractor value is 7
-
-	local threshWidth = 10 -- TODO (Jakob): make more accurate - calculate and set in variable in updateWorkTools()
-	local lWidthX = x - sideX * 0.5 * threshWidth + dirX * sideWatchDirOffset;
-	local lWidthZ = z - sideZ * 0.5 * threshWidth + dirZ * sideWatchDirOffset;
-	local lStartX = lWidthX - sideX * 0.7 * threshWidth;
-	local lStartZ = lWidthZ - sideZ * 0.7 * threshWidth;
-	local lHeightX = lStartX + dirX * sideWatchDirSize;
-	local lHeightZ = lStartZ + dirZ * sideWatchDirSize;
-
-	local rWidthX = x + sideX * 0.5 * threshWidth + dirX * sideWatchDirOffset;
-	local rWidthZ = z + sideZ * 0.5 * threshWidth + dirZ * sideWatchDirOffset;
-	local rStartX = rWidthX + sideX * 0.7 * threshWidth;
-	local rStartZ = rWidthZ + sideZ * 0.7 * threshWidth;
-	local rHeightX = rStartX + dirX * selfSideWatchDirSize;
-	local rHeightZ = rStartZ + dirZ * selfSideWatchDirSize;
-
-	-- TODO (Jakob): the last "true" means we're also including preparing fruit. Should this only be done if the combine has indeed a fruit preparer?
-	local leftFruit = Utils.getFruitArea(combine.lastValidInputFruitType, lStartX, lStartZ, lWidthX, lWidthZ, lHeightX, lHeightZ, true);
-	local rightFruit = Utils.getFruitArea(combine.lastValidInputFruitType, rStartX, rStartZ, rWidthX, rWidthZ, rHeightX, rHeightZ, true);
-
-	-- courseplay:debug(string.format("%s: fruit: left %f, right %f", nameNum(combine), leftFruit, rightFruit), 3);
+	courseplay:calculateWorkWidth(tractor,true)
+	local threshWidth = Utils.getNoNil(tractor.cp.workWidth,10)  
+	courseplay:debug(string.format("%s:courseplay:sideToDrive: threshWidth: %.2f", nameNum(tractor), threshWidth), 4);
+	local lStartX = x - sideX * 0.6 * threshWidth 
+	local lStartZ = z - sideZ * 0.6 * threshWidth
+	local lWidthX = lStartX - sideX * 0.7 * threshWidth;
+	local lWidthZ = lStartZ - sideZ * 0.7 * threshWidth;
+	local lHeightX = lStartX + dirX * 0.5 * threshWidth;
+	local lHeightZ = lStartZ + dirZ * 0.5 * threshWidth;
+	local rStartX = x + sideX * 0.6 * threshWidth 
+	local rStartZ = z + sideZ * 0.6 * threshWidth
+	local rWidthX = rStartX + sideX * 0.7 * threshWidth;
+	local rWidthZ = rStartZ + sideZ * 0.7 * threshWidth;
+	local rHeightX = rStartX + dirX * 0.5 * threshWidth;
+	local rHeightZ = rStartZ + dirZ * 0.5 * threshWidth;
+	local fruitType = combine.spec_combine.lastValidInputFruitType
+	local hasFruit = false
+	if fruitType == nil or fruitType == 0 then
+		hasFruit,fruitType = courseplay:areaHasFruit(x, z, nil, threshWidth, threshWidth)
+	end
+	local minHarvestable, maxHarvestable = 1,1
+	if hasFruit then
+		maxHarvestable = g_fruitTypeManager.fruitTypes[fruitType].numGrowthStates
+	else
+		fruitType = 0 
+	end
+	local leftFruit, totalArealeft = FieldUtil.getFruitArea(lStartX, lStartZ, lWidthX, lWidthZ, lHeightX, lHeightZ, {}, {}, fruitType, minHarvestable , maxHarvestable, 0, 0, 0,false);
+	local rightFruit, totalArearight = FieldUtil.getFruitArea(rStartX, rStartZ, rWidthX, rWidthZ, rHeightX, rHeightZ, {}, {}, fruitType, minHarvestable , maxHarvestable, 0, 0, 0,false);
+	courseplay:debug(string.format("%s:courseplay:sideToDrive: fruit(%s): left %f, right %f", nameNum(combine),tostring(fruitType), leftFruit, rightFruit), 4);
 	
 	-- AUTO COMBINE
-	if combine.acParameters ~= nil and combine.acParameters.enabled then -- autoCombine
+	if combine.acParameters ~= nil and combine.acParameters.enabled and combine.isHired and not combine.cp.isDriving then -- autoCombine
+		courseplay:debug(string.format("%s:courseplay:sideToDrive: is AutoCombine", nameNum(combine)), 4);
 		if not combine.acParameters.upNDown then
 			if combine.acParameters.leftAreaActive then
 				leftFruit,rightFruit = 0, 100; --fruitSide = "right"
@@ -237,29 +216,31 @@ function courseplay:sideToDrive(vehicle, combine, distance, switchSide)
 				leftFruit,rightFruit = 100, 0; --fruitSide = "left"
 			end
 		else
-			if combine.acTurnStage == 0 or (combine.acTurnStage >= 20 and combine.acTurnStage <= 22) then
+			if combine.acTurnStage == 0 then
 				if combine.acParameters.leftAreaActive then 
 					leftFruit,rightFruit = 0, 100; --fruitSide = "right"
 				else
 					leftFruit,rightFruit = 100, 0; --fruitSide = "left"
 				end
-			end
+			else
+				if combine.acParameters.leftAreaActive then
+					leftFruit,rightFruit = 100, 0; --fruitSide = "left"
+				else
+					leftFruit,rightFruit = 0, 100; --fruitSide = "right"
+				end
+			end;
 		end
 	
 	-- AI HELPER COMBINE
-	elseif combine.isAIThreshing and combine.acParameters == nil then
-		-- Fruit side switch at end of field line
-		if (not combine.waitingForDischarge and combine.waitForTurnTime > combine.time) or (combine.turnStage == 1) then
-			local tempFruit = leftFruit;
-			leftFruit = rightFruit;
-			rightFruit = tempFruit;
-		end;
-
-	-- COURSEPLAY
-	elseif tractor.drive then
+	elseif combine.aiIsStarted then 
+		courseplay:debug(string.format("%s:courseplay:sideToDrive: is AIThreshing", nameNum(combine)), 4);
+		
+		-- COURSEPLAY
+	elseif tractor:getIsCourseplayDriving() then
+		courseplay:debug(string.format("%s:courseplay:sideToDrive: is Courseplayer", nameNum(combine)), 4);
 		local ridgeMarker = 0;
-		local wayPoint = tractor.recordnumber;
-		if tractor.cp.turnStage > 0 then
+		local wayPoint = tractor.cp.waypointIndex;
+		if tractor.cp.settings.turnStage:is(true) then
    			switchSide = true;
   		end;
 		if not switchSide then
@@ -277,6 +258,8 @@ function courseplay:sideToDrive(vehicle, combine, distance, switchSide)
 		end;
 	end;
 	
+	
+	courseplay:debug(string.format("%s:courseplay:sideToDrive: fruit after check: left %f, right %f", nameNum(combine), leftFruit, rightFruit), 4);
 	local fruitSide = 'none';
 	if leftFruit > rightFruit then
 		fruitSide = 'left';
@@ -305,6 +288,6 @@ function courseplay:sideToDrive(vehicle, combine, distance, switchSide)
 	else
 		vehicle.sideToDrive = 'left';
 	end;
-
+	courseplay:debug(string.format("%s:courseplay:sideToDrive: return fruitside %s", nameNum(combine), fruitSide), 4);
 	return fruitSide;
 end

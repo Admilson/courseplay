@@ -2,28 +2,40 @@
 -- original algorithm by upsidedown, 24 Nov 2013 / incorporation into Courseplay by Jakob Tischler, 27 Nov 2013
 -- steep angle algorithm by fck54
 
-courseplay.fields.automaticScan = true;
-courseplay.fields.onlyScanOwnedFields = true;
-courseplay.fields.defaultScanStep = 5;
-courseplay.fields.scanStep = courseplay.fields.defaultScanStep;
+courseplay.fields = {};
+
+function courseplay.fields:setup()
+	print('## Courseplay: setting up fields (basic)');
+	self.fieldData = {};
+	self.numAvailableFields = 0;
+	self.fieldChannels = {};
+	self.lastChannel = 0;
+	self.curFieldScanIndex = 0;
+	self.allFieldsScanned = false;
+	self.ingameDataSetUp = false;
+	self.customFieldMaxNum = 250;
+	self.automaticScan = true;
+	self.onlyScanOwnedFields = true;
+	self.debugScannedFields = false;
+	self.debugCustomLoadedFields = false;
+	self.defaultScanStep = 5;
+	self.scanStep = 5;
+end;
 
 function courseplay.fields:setUpFieldsIngameData()
+
 	--self = courseplay.fields
 	self:dbg("call setUpIngameData()", 'scan');
-	self.fieldChannels = { g_currentMission.cultivatorChannel, g_currentMission.ploughChannel, g_currentMission.sowingChannel, g_currentMission.sowingWidthChannel };
-	self.lastChannel = g_currentMission.cultivatorChannel;
-
-	self.seedUsageCalculator.fruitTypes = self:getFruitTypes();
-	self:setCustomFieldsSeedData();
+	--Tommi:still needed ?  self.fieldChannels = { g_currentMission.cultivatorChannel, g_currentMission.plowChannel, g_currentMission.sowingChannel, g_currentMission.sowingWidthChannel };
+	--Tommi: still needed ?  self.lastChannel = g_currentMission.cultivatorChannel;
 
 	self.ingameDataSetUp = true;
 end;
 
 function courseplay.fields:setAllFieldEdges()
-	--self = courseplay.fields
-
 	self.curFieldScanIndex = self.curFieldScanIndex + 1;
-	if self.curFieldScanIndex > g_currentMission.fieldDefinitionBase.numberOfFields then
+	
+	if self.curFieldScanIndex > #courseplay.fields.fieldDefinitionBase then
 		self.allFieldsScanned = true;
 		self.numAvailableFields = table.maxn(self.fieldData);
 		self:dbg(string.format('%d fields scanned - done', self.curFieldScanIndex - 1), 'scan');
@@ -35,12 +47,13 @@ function courseplay.fields:setAllFieldEdges()
 	local maxN = 2000;
 	local numDirectionTries = 10;
 
-	local fieldDef = g_currentMission.fieldDefinitionBase.fieldDefs[self.curFieldScanIndex];
+	local fieldDef = courseplay.fields.fieldDefinitionBase[self.curFieldScanIndex];
 	if fieldDef ~= nil then
-		if not self.onlyScanOwnedFields or (self.onlyScanOwnedFields and fieldDef.ownedByPlayer) then
-			local fieldNum = fieldDef.fieldNumber;
+		if not self.onlyScanOwnedFields or (self.onlyScanOwnedFields and (fieldDef.farmland.isOwned or fieldDef.currentMission)) then  --TODO: Check, whether I'm the owner
+		--if not self.onlyScanOwnedFields or (self.onlyScanOwnedFields and fieldDef.ownedByPlayer) then
+			local fieldNum = fieldDef.fieldId;
 			if self.fieldData[fieldNum] == nil then
-				local initObject = fieldDef.fieldMapIndicator;
+				local initObject = fieldDef.nameIndicator;
 				local x,_,z = getWorldTranslation(initObject);
 				if fieldNum and initObject and x and z then
 					local isField = courseplay:isField(x, z, 0.1, 0.1);
@@ -142,10 +155,10 @@ function courseplay.fields:getSingleFieldEdge(initObject, scanStep, maxN, random
 		while numPoints < maxN do
 			setTranslation(probe1, 0, 0, scanAt);
 			rotate(tg,0,math.pi/2,0); -- place probe1 inside the field (90 deg)
-			px,_,pz = getWorldTranslation(probe1);
+			local px,_,pz = getWorldTranslation(probe1);
 			local rotAngle = 0.1; -- 5.73 deg
 
-			local return2field = not courseplay:isField(px, pz, 0.1, 0.1); --there is NO guarantee that probe1 (px,pz) is in field just because tg is!!!
+			local return2field = not courseplay:isField(px, pz, 0.1, 0.1); --there is NO guarantee that probe1 (px,pz) is in field just because tg is!
 			self:dbg(string.format('return to field first : %s', tostring(return2field)), dbgType);
 			local cnt = 2*math.pi/0.1;
 			while courseplay:isField(px, pz, 0.1, 0.1) or return2field do
@@ -153,7 +166,7 @@ function courseplay.fields:getSingleFieldEdge(initObject, scanStep, maxN, random
 				rotate(tg,0,-rotAngle,0);
 				px,_,pz = getWorldTranslation(probe1);
 				if cnt < 0 then
-					self:dbg('\lost', dbgType);
+					self:dbg('\tlost', dbgType);
 					break;
 				end;
 				if return2field then
@@ -205,7 +218,7 @@ function courseplay.fields:getSingleFieldEdge(initObject, scanStep, maxN, random
 				setTranslation(tg, getWorldTranslation(probe1));
 
 				if numPoints > 5 then
-					local dis0 = Utils.vector2Length(px-coordinates[1].cx, pz-coordinates[1].cz)
+					local dis0 = MathUtil.vector2Length(px-coordinates[1].cx, pz-coordinates[1].cz)
 					--print(dis0)
 					if dis0 < scanAt*1.25 then --otherwise start and end points can be very close together
 						self:dbg(string.format('\tdistance to first point [%.2f] < scanStep*1.25 [%.2f] -> break', dis0, scanStep * 1.25), 'scan');
@@ -264,9 +277,6 @@ function courseplay.fields:setSingleFieldEdgePath(initObject, initX, initZ, scan
 								name = string.format('%s %d', courseplay:loc('COURSEPLAY_FIELD'), fieldNum);
 							};
 
-							self.fieldData[fieldNum].fieldAreaText = courseplay:loc('COURSEPLAY_SEEDUSAGECALCULATOR_FIELD'):format(fieldNum, self:formatNumber(self.fieldData[fieldNum].areaHa, 2), g_i18n:getText('area_unit_short'));
-							self.fieldData[fieldNum].seedUsage, self.fieldData[fieldNum].seedPrice, self.fieldData[fieldNum].seedDataText = self:getFruitData(area);
-
 							self.numAvailableFields = table.maxn(courseplay.fields.fieldData);
 
 							self:dbg(string.format('\t\tcourseplay.fields.fieldData[%d] == nil => set as .fieldData[%d], break', fieldNum, fieldNum), dbgType);
@@ -290,18 +300,16 @@ function courseplay.fields:setSingleFieldEdgePath(initObject, initX, initZ, scan
 	end;
 end;
 
-courseplay.fields.getPointDirection = courseplay.generation.getPointDirection;
+courseplay.fields.getPointDirection = courseplay.generation.getPointDirection; -- TODO (Jakob): generateCourse is sourced after fields, so this shouldn't really work!
 
 function courseplay.fields:getPolygonData(poly, px, pz, useC, skipArea, skipDimensions)
 	-- This function gets a polygon's area, a boolean if x,z is inside the polygon, the poly's dimensions and the poly's direction (clockwise vs. counter-clockwise).
-	-- Since all of those queries require a for loop through the polygon's vertices, it is better to combine them into once big query.
+	-- Since all of those queries require a for loop through the polygon's vertices, it is better to combine them into one big query.
 
 	if useC == nil then useC = true; end;
 	local x,z = useC and 'cx' or 'x', useC and 'cz' or 'z';
 	local numPoints = #poly;
 	local cp,np,pp;
-	local fp = poly[1];
-
 	-- POINT IN POLYGON (Jordan method) -- @src: http://de.wikipedia.org/wiki/Punkt-in-Polygon-Test_nach_Jordan
 	-- returns:
 	--	 1	point is inside of poly
@@ -323,24 +331,6 @@ function courseplay.fields:getPolygonData(poly, px, pz, useC, skipArea, skipDime
 		minZ =  999999,
 		maxZ = -999999
 	};
-
-	--[[
-	-- DIRECTION
-	-- offset test points
-	local dirX,dirZ = self:getPointDirection(poly[1], poly[2], useC);
-	local offsetRight = {
-		[x] = poly[2][x] - dirZ,
-		[z] = poly[2][z] + dirX,
-		isInPoly = false
-	};
-	local offsetLeft = {
-		[x] = poly[2][x] + dirZ,
-		[z] = poly[2][z] - dirX,
-		isInPoly = false
-	};
-	-- clockwise vs counterclockwise variables
-	local dirArea, dirSuccess, dirTries = 0, false, 1;
-	]]
 
 	-- ############################################################
 
@@ -367,31 +357,6 @@ function courseplay.fields:getPolygonData(poly, px, pz, useC, skipArea, skipDime
 			if cp[z] < dimensions.minZ then dimensions.minZ = cp[z]; end;
 			if cp[z] > dimensions.maxZ then dimensions.maxZ = cp[z]; end;
 		end;
-
-		--[[
-		-- direction
-		if i < numPoints then
-			local pointStart = {
-				[x] = cp[x] - fp[x];
-				[z] = cp[z] - fp[z];
-			};
-			local pointEnd = {
-				[x] = np[x] - fp[x];
-				[z] = np[z] - fp[z];
-			};
-			dirArea = dirArea + (pointStart[x] * -pointEnd[z]) - (pointEnd[x] * -pointStart[z]);
-		end;
-
-		-- offset right point in poly
-		if ((cp[z] > offsetRight[z]) ~= (pp[z] > offsetRight[z])) and (offsetRight[x] < (pp[x] - cp[x]) * (offsetRight[z] - cp[z]) / (pp[z] - cp[z]) + cp[x]) then
-			offsetRight.isInPoly = not offsetRight.isInPoly;
-		end;
-
-		-- offset left point in poly
-		if ((cp[z] > offsetLeft[z])  ~= (pp[z] > offsetLeft[z]))  and (offsetLeft[x]  < (pp[x] - cp[x]) * (offsetLeft[z]  - cp[z]) / (pp[z] - cp[z]) + cp[x]) then
-			offsetLeft.isInPoly = not offsetLeft.isInPoly;
-		end;
-		]]
 	end;
 
 	if getPointInPoly then
@@ -416,130 +381,158 @@ function courseplay.fields:getPolygonData(poly, px, pz, useC, skipArea, skipDime
 		isClockwise = nil;
 	end;
 
-	return area, pointInPoly, dimensions, isClockwise;
+	return area, pointInPoly, dimensions, isClockwise
 end;
 
-function courseplay.fields.buyField(self, fieldDef, isOwned) -- scan field when it's bought
+--
+function courseplay.fields.updateFieldData(self, farmId) -- scan field when it's bought
 	-- print(string.format('buyField(fieldDef, isOwned) [fieldNumber %s]', tostring(fieldDef.fieldNumber)));
-	if g_currentMission.time > 0 and isOwned and courseplay.fields.automaticScan and courseplay.fields.onlyScanOwnedFields and courseplay.fields.fieldData[fieldDef.fieldNumber] == nil then
+	if g_currentMission.time > 0 and farmId ~= FarmlandManager.NO_OWNER_FARM_ID and courseplay.globalSettings.autoFieldScan:is(true) and courseplay.fields.onlyScanOwnedFields and courseplay.fields.fieldData[self.fieldId] == nil then
 		-- print(string.format('\tisOwned=true, automaticScan=true, onlyScanOwnedFields=true, fieldData[%d]=nil', fieldDef.fieldNumber));
-		local initObject = fieldDef.fieldMapIndicator;
-		local x,_,z = getWorldTranslation(initObject);
-		courseplay.fields:setSingleFieldEdgePath(initObject, x, z, courseplay.fields.scanStep, 2000, 10, fieldDef.fieldNumber, false, 'scan');
+		local initObject = self.nameIndicator;
+		if initObject then
+			local x,_,z = getWorldTranslation(initObject);
+			print('scanning')
+			courseplay.fields:setSingleFieldEdgePath(initObject, x, z, courseplay.fields.scanStep, 2000, 10, self.fieldId, false, 'scan');
+		end
+	elseif g_currentMission.time > 0 and farmId == FarmlandManager.NO_OWNER_FARM_ID and courseplay.globalSettings.autoFieldScan:is(true) and courseplay.fields.onlyScanOwnedFields and courseplay.fields.fieldData[self.fieldId] then
+		print('deleting')
+		courseplay.fields.fieldData[self.fieldId] = nil
+		courseplay.fields.numAvailableFields = table.maxn(courseplay.fields.fieldData)
 	end;
 end;
-FieldDefinition.setFieldOwnedByPlayer = Utils.prependedFunction(FieldDefinition.setFieldOwnedByPlayer, courseplay.fields.buyField);
+Field.setFieldOwned = Utils.appendedFunction(Field.setFieldOwned, courseplay.fields.updateFieldData);
+
+function courseplay.fields.addContractField(self) -- scan field when we take a contract
+	-- print(string.format('buyField(fieldDef, isOwned) [fieldNumber %s]', tostring(fieldDef.fieldNumber)));
+	if g_currentMission.time > 0 and courseplay.globalSettings.autoFieldScan:is(true) and courseplay.fields.onlyScanOwnedFields and courseplay.fields.fieldData[self.field.fieldId] == nil then
+		-- print(string.format('\tisOwned=true, automaticScan=true, onlyScanOwnedFields=true, fieldData[%d]=nil', fieldDef.fieldNumber));
+		local initObject = self.field.nameIndicator;
+		if initObject then	
+			print('scanning')
+			local x,_,z = getWorldTranslation(initObject);
+			courseplay.fields:setSingleFieldEdgePath(initObject, x, z, courseplay.fields.scanStep, 2000, 10, self.field.fieldId, false, 'scan');
+		end
+	end;
+end;
+AbstractFieldMission.addToMissionMap = Utils.appendedFunction(AbstractFieldMission.addToMissionMap, courseplay.fields.addContractField);
+
+
+function courseplay.fields.removeContractField(self, success) -- scan field when we complete a contract
+	-- print(string.format('buyField(fieldDef, isOwned) [fieldNumber %s]', tostring(fieldDef.fieldNumber)));
+	if g_currentMission.time > 0 and courseplay.globalSettings.autoFieldScan:is(true) and courseplay.fields.onlyScanOwnedFields and courseplay.fields.fieldData[self.field.fieldId] then
+		print('deleting')
+		courseplay.fields.fieldData[self.field.fieldId] = nil 
+		courseplay.fields.numAvailableFields = table.maxn(courseplay.fields.fieldData)
+	end
+end;
+AbstractFieldMission.finish = Utils.appendedFunction(AbstractFieldMission.finish, courseplay.fields.removeContractField);
 
 --XML SAVING
-function courseplay.fields:openOrCreateXML(forceCreation)
-	--self = courseplay.fields
-	-- returns the file if success, nil else
-	forceCreation = forceCreation or false;
+function courseplay.fields.saveCustomFields(self)
+	local customFields = courseplay.fields;
 
-	local xmlFile;
-	local savegame = g_careerScreen.savegames[g_careerScreen.selectedIndex];
-	if savegame ~= nil then
-		local filePath = savegame.savegameDirectory .. "/courseplayFields.xml"
-		if fileExists(filePath) and (not forceCreation) then
-			xmlFile = loadXMLFile("fieldsFile", filePath);
-		else
-			xmlFile = createXMLFile("fieldsFile", filePath, 'XML');
-		end;
-	else
-		--this is a problem... xmlFile stays nil
-	end;
-	return xmlFile;
-end;
-
-function courseplay.fields:saveAllCustomFields()
-	--self = courseplay.fields
-	-- saves fields to xml-file
 	-- opening the file with io.open will delete its content...
-	if g_server ~= nil then
-		local savegame = g_careerScreen.savegames[g_careerScreen.selectedIndex];
-		if savegame ~= nil and self.numAvailableFields > 0 then
-			local file = io.open(savegame.savegameDirectory .. '/courseplayFields.xml', 'w');
-			if file ~= nil then
-				file:write('<?xml version="1.0" encoding="utf-8" standalone="no" ?>\n<XML>\n');
-
-				file:write('\t<fields>\n')
-				for i,fieldData in pairs(self.fieldData) do
-					if fieldData.isCustom then
-						file:write(string.format('\t\t<field fieldNum="%d" numPoints="%d">\n', fieldData.fieldNum, fieldData.numPoints));
-						for j,point in ipairs(fieldData.points) do
-							file:write(string.format('\t\t\t<point%d pos="%.2f %.2f %.2f" />\n', j, point.cx, point.cy, point.cz));
-						end;
-						file:write('\t\t</field>\n');
+	if g_server ~= nil and CpManager.cpCustomFieldsXmlFilePath ~= nil and customFields.numAvailableFields > 0 then
+		local cpCFXml = createXMLFile("cpCustomFieldsXml", CpManager.cpCustomFieldsXmlFilePath, "CPCustomFields");
+		if cpCFXml and cpCFXml ~= 0 then
+			local fieldIndex = 0;
+			for _,fieldData in pairs(customFields.fieldData) do
+				if fieldData.isCustom then
+					local key = ("CPCustomFields.field(%d)"):format(fieldIndex);
+					setXMLInt(cpCFXml, key .. '#fieldNum',	fieldData.fieldNum);
+					setXMLInt(cpCFXml, key .. '#numPoints',	fieldData.numPoints);
+					for i,point in ipairs(fieldData.points) do
+						setXMLString(cpCFXml, key .. (".point%d#pos"):format(i), ("%.2f %.2f %.2f"):format(point.cx, point.cy, point.cz))
 					end;
+
+					fieldIndex = fieldIndex + 1;
 				end;
-				file:write('\t</fields>\n</XML>');
-				file:close();
-			else
-				print("Error: Courseplay's custom fields could not be saved to " .. tostring(savegame.savegameDirectory) .. "/courseplayFields.xml");
 			end;
+
+			saveXMLFile(cpCFXml);
+			delete(cpCFXml);
+		else
+			print("Error: Courseplay's custom fields could not be saved to " .. CpManager.cpCustomFieldsXmlFilePath);
 		end;
 	end;
 end;
+FSBaseMission.saveSavegame = Utils.appendedFunction(FSBaseMission.saveSavegame, courseplay.fields.saveCustomFields);
 
 --XML LOADING
-function courseplay.fields:loadAllCustomFields()
+function courseplay.fields:loadCustomFields(importFromOldFile)
 	--self = courseplay.fields
-	if g_server ~= nil then
-		local savegame = g_careerScreen.savegames[g_careerScreen.selectedIndex];
-		if savegame ~= nil then
-			local filePath = savegame.savegameDirectory .. "/courseplayFields.xml"
-			if fileExists(filePath) then
-				local xmlFile = loadXMLFile("fieldsFile", filePath);
-				local i = 0;
-				while true do
-					local key = string.format('XML.fields.field(%d)', i);
-					if not hasXMLProperty(xmlFile, key) then
-						break;
-					end;
+	if (CpManager.cpCustomFieldsXmlFilePath ~= nil and fileExists(CpManager.cpCustomFieldsXmlFilePath)) or importFromOldFile then
+		local cpCFXml;
+		if importFromOldFile then
+			print('## Courseplay: Importing old custom fields from "courseplayFields.xml"');
+			cpCFXml = loadXMLFile("cpOldCustomFieldsXml", CpManager.cpOldCustomFieldsXmlFilePath);
+		else
+			cpCFXml = loadXMLFile("cpCustomFieldsXml", CpManager.cpCustomFieldsXmlFilePath);
+		end;
 
-					local fieldNum = getXMLInt(xmlFile, key .. '#fieldNum');
-					local numPoints = getXMLInt(xmlFile, key .. '#numPoints');
-
-					if fieldNum and numPoints and numPoints > 0 then
-						local fieldData = {
-							fieldNum = fieldNum;
-							points = {};
-							areaSqm = 0;
-							areaHa = 0;
-							seedUsage = {};
-							seedPrice = {};
-							numPoints = numPoints;
-							name = string.format("%s %d (%s)", courseplay:loc('COURSEPLAY_FIELD'), fieldNum, courseplay:loc('COURSEPLAY_USER'));
-							isCustom = true;
-						};
-						for j=1,numPoints do
-							local pointKey = key .. '.point' .. j;
-							if hasXMLProperty(xmlFile, pointKey) then
-								local x,y,z = Utils.getVectorFromString(getXMLString(xmlFile, pointKey .. '#pos'));
-								if x and y and z then
-									table.insert(fieldData.points, { cx = x, cy = y, cz = z });
-								end;
-							end;
-						end;
-						local area, _, dimensions = self:getPolygonData(fieldData.points, nil, nil, true);
-						fieldData.areaSqm = area;
-						fieldData.areaHa = area / 10000;
-						fieldData.fieldAreaText = courseplay:loc('COURSEPLAY_SEEDUSAGECALCULATOR_FIELD'):format(fieldNum, self:formatNumber(fieldData.areaHa, 2), g_i18n:getText('area_unit_short'));
-						fieldData.dimensions = dimensions;
-
-
-						self.fieldData[fieldNum] = fieldData;
-						if self.debugCustomLoadedFields then
-							self:dbg(tableShow(fieldData, 'fieldData[' .. fieldNum .. ']'), 'customLoad');
-						end;
-
-						self.numAvailableFields = table.maxn(courseplay.fields.fieldData);
-
-						table.insert(self.seedUsageCalculator.fieldsWithoutSeedData, fieldNum);
-					end;
-					i = i + 1;
-				end;
+		local i = 0;
+		while true do
+			local key;
+			if importFromOldFile then
+				key = string.format('XML.fields.field(%d)', i);
+			else
+				key = string.format('CPCustomFields.field(%d)', i);
 			end;
+
+			if not hasXMLProperty(cpCFXml, key) then
+				break;
+			end;
+
+			local fieldNum = getXMLInt(cpCFXml, key .. '#fieldNum');
+			local numPoints = getXMLInt(cpCFXml, key .. '#numPoints');
+
+			if fieldNum and numPoints and numPoints > 0 then
+				local fieldData = {
+					fieldNum = fieldNum;
+					points = {};
+					areaSqm = 0;
+					areaHa = 0;
+					numPoints = numPoints;
+					name = string.format("%s %d (%s)", courseplay:loc('COURSEPLAY_FIELD'), fieldNum, courseplay:loc('COURSEPLAY_USER'));
+					isCustom = true;
+				};
+				for j=1,numPoints do
+					local pointKey = key .. '.point' .. j;
+					if hasXMLProperty(cpCFXml, pointKey) then
+						local x,y,z = StringUtil.getVectorFromString(getXMLString(cpCFXml, pointKey .. '#pos'));
+						if x and y and z then
+							table.insert(fieldData.points, { cx = x, cy = y, cz = z });
+						end;
+					end;
+				end;
+				local area, _, dimensions = self:getPolygonData(fieldData.points, nil, nil, true);
+				fieldData.areaSqm = area;
+				fieldData.areaHa = area / 10000;
+				fieldData.dimensions = dimensions;
+
+
+				self.fieldData[fieldNum] = fieldData;
+				if self.debugCustomLoadedFields then
+					self:dbg(tableShow(fieldData, 'fieldData[' .. fieldNum .. ']'), 'customLoad');
+				end;
+
+				self.numAvailableFields = table.maxn(courseplay.fields.fieldData);
+			end;
+			i = i + 1;
+		end;
+
+		delete(cpCFXml);
+
+		if importFromOldFile then
+			self:saveCustomFields(); -- this will prevent importing again if the game was not saved.
+
+			-------------------------------------------------------------------------
+			-- Delete content of old file
+			-------------------------------------------------------------------------
+			local cpOldCFFile = createXMLFile("cpOldCFFile", CpManager.cpOldCustomFieldsXmlFilePath, 'XML');
+			saveXMLFile(cpOldCFFile);
+			delete(cpOldCFFile);
 		end;
 	end;
 end;
@@ -550,84 +543,6 @@ function courseplay.fields:dbg(str, debugType)
 	end;
 end;
 
--- SeedUsageCalculator functions
-function courseplay.fields:getFruitTypes()
-	--GET FRUITTYPES
-	local fruitTypes = {};
-	local hudW = g_currentMission.hudTipperOverlay.width  * 1.25;
-	local hudH = g_currentMission.hudTipperOverlay.height * 1.25;
-	local hudX = courseplay.hud.infoBasePosX - 10/1920 + 93/1920 + 449/1920 - hudW;
-	local hudY = courseplay.hud.infoBasePosY - 10/1920 + 335/1080;
-	for name,fruitType in pairs(FruitUtil.fruitTypes) do
-		if fruitType.allowsSeeding and fruitType.seedUsagePerSqm then
-			local fillType = FruitUtil.fruitTypeToFillType[fruitType.index];
-			local fillTypeDesc = Fillable.fillTypeIndexToDesc[ fillType ];
-			if fillTypeDesc then
-				local fruitData = {
-					index = fruitType.index,
-					name = fruitType.name,
-					nameI18N = fillTypeDesc.nameI18N,
-					sucText = courseplay:loc('COURSEPLAY_SEEDUSAGECALCULATOR_SEEDTYPE'):format(tostring(fillTypeDesc.nameI18N))
-				};
-
-				if fillType and g_currentMission.fillTypeOverlays[fillType] then
-					local hudOverlayPath = g_currentMission.fillTypeOverlays[fillType].filename;
-					if hudOverlayPath and hudOverlayPath ~= '' and fileExists(hudOverlayPath) then
-						fruitData.overlay = Overlay:new(('suc_fruit_%s'):format(fruitType.name), hudOverlayPath, hudX, hudY, hudW, hudH);
-						fruitData.overlay:setColor(1, 1, 1, 0.25);
-						-- print(('SUC fruitType %s: hudPath=%q, overlay=%s'):format(fruitType.name, tostring(hudOverlayPath), tostring(fruitData.overlay)));
-					end;
-				end;
-
-				fruitData.usagePerSqmDefault = fruitType.seedUsagePerSqm;
-				fruitData.pricePerLiterDefault = fillTypeDesc.pricePerLiter;
-				if courseplay.moreRealisticInstalled then
-					local _,seedPrice,seedUsage,_ = RealisticUtils.getFruitInfosV2(fruitType.name);
-					fruitData.usagePerSqmMoreRealistic = seedUsage;
-					fruitData.pricePerLiterMoreRealistic = seedPrice;
-				end;
-
-				if fruitData.nameI18N and fruitData.usagePerSqmDefault and fruitData.pricePerLiterDefault then
-					table.insert(fruitTypes, fruitData);
-				end;
-			end;
-		end;
-	end;
-	self.seedUsageCalculator.numFruits = #fruitTypes;
-	table.sort(fruitTypes, function(a,b) return a.nameI18N:lower() < b.nameI18N:lower() end);
-	self.seedUsageCalculator.enabled = self.seedUsageCalculator.numFruits > 0;
-	return fruitTypes;
-end;
-
-function courseplay.fields:getFruitData(area)
-	local usage, price, text = {}, {}, {};
-
-	for i,fruitData in ipairs(self.seedUsageCalculator.fruitTypes) do
-		local name = fruitData.name;
-		usage[name] = {};
-		price[name] = {};
-		text[name] = {};
-
-		usage[name].default = fruitData.usagePerSqmDefault * area;
-		price[name].default = fruitData.pricePerLiterDefault * usage[name].default;
-		text[name].default = courseplay:loc('COURSEPLAY_SEEDUSAGECALCULATOR_USAGE_DEFAULT'):format(self:formatNumber(usage[name].default, 0), g_i18n:getText('fluid_unit_short'), self:formatNumber(price[name].default, 0, true));
-
-		if courseplay.moreRealisticInstalled then
-			usage[name].moreRealistic = fruitData.usagePerSqmMoreRealistic * area;
-			price[name].moreRealistic = fruitData.pricePerLiterMoreRealistic * usage[name].moreRealistic;
-			text[name].moreRealistic = courseplay:loc('COURSEPLAY_SEEDUSAGECALCULATOR_USAGE_MOREREALISTIC'):format(self:formatNumber(usage[name].moreRealistic, 0), g_i18n:getText('fluid_unit_short'), self:formatNumber(price[name].moreRealistic, 0, true));
-		end;
-	end;
-
-	return usage, price, text;
-end;
-
-function courseplay.fields:setCustomFieldsSeedData()
-	for i,fieldNum in ipairs(self.seedUsageCalculator.fieldsWithoutSeedData) do
-		self.fieldData[fieldNum].seedUsage, self.fieldData[fieldNum].seedPrice, self.fieldData[fieldNum].seedDataText = self:getFruitData(self.fieldData[fieldNum].areaSqm);
-	end;
-	self.seedUsageCalculator.fieldsWithoutSeedData = {};
-end;
 
 local saveFillTypeHudPath = function(self, fillType, filename)
 	self.fillTypeOverlays[fillType].filename = filename;
@@ -643,8 +558,70 @@ function courseplay.fields:formatNumber(number, precision, money)
 		str = ('%s%s%s'):format(str, courseplay.numberDecimalSeparator, decimal:sub(1, precision));
 	end;
 	if money then
-		str = ('%s %s'):format(str, g_i18n:getText('Currency_symbol'));
+		str = ('%s %s'):format(str, g_i18n:getCurrencySymbol(true));
 	end;
 	return str;
 end;
 
+function courseplay.fields.saveAllFields()
+	if g_server ~= nil and CpManager.cpCoursesFolderPath ~= nil then
+		local fileName = createXMLFile("cpFields", CpManager.cpCoursesFolderPath .. "/cpFields.xml", "CPFields");
+		print( "Saving all fields to " .. CpManager.cpCoursesFolderPath .. "/cpFields.xml")
+		if fileName and fileName ~= 0 then
+			local fieldIndex = 0;
+			for _,fieldData in pairs(courseplay.fields.fieldData) do
+				print( "Saving field " .. fieldData.fieldNum .. "..." )
+				local key = ("CPFields.field(%d)"):format(fieldIndex);
+				setXMLInt(fileName, key .. '#fieldNum',	fieldData.fieldNum);
+				setXMLInt(fileName, key .. '#numPoints',	fieldData.numPoints);
+				for i,point in ipairs(fieldData.points) do
+					setXMLString(fileName, key .. (".point%d#pos"):format(i), ("%.2f %.2f %.2f"):format(point.cx, point.cy, point.cz))
+				end;
+				if not fieldData.islandNodes then
+					courseGenerator.findIslands( fieldData )
+				end
+				for i, islandNode in ipairs( fieldData.islandNodes ) do
+					setXMLString( fileName, key .. ( ".islandNode%d#pos"):format( i ), ("%.2f %2.f"):format( islandNode.cx, islandNode.cz ))
+				end
+				
+				fieldIndex = fieldIndex + 1;
+			end;
+
+			saveXMLFile(fileName);
+			delete(fileName);
+		else
+			print("Error: Courseplay's custom fields could not be saved to " .. CpManager.cpCoursesFolderPath);
+		end;
+	end;
+end
+
+
+function courseplay.fields:onWhichFieldAmI(vehicle)
+	local positionX, _, positionZ = getWorldTranslation(vehicle.cp.directionNode or vehicle.rootNode);
+	return self:getFieldNumForPosition( positionX, positionZ )
+end
+
+function courseplay.fields:getFieldNumForPosition(positionX, positionZ)
+	local fieldNum = 0
+	for index, field in pairs(courseplay.fields.fieldData) do
+		if positionX >= field.dimensions.minX and positionX <= field.dimensions.maxX and positionZ >= field.dimensions.minZ and positionZ <= field.dimensions.maxZ then
+			local _, pointInPoly, _, _ = self:getPolygonData(field.points, positionX, positionZ, true, true, true);
+			if pointInPoly then
+				fieldNum = index
+				break
+			end
+		end
+	end
+	return fieldNum
+end
+
+function courseplay.fields:getClosestDistanceToFieldEdge(fieldNum, x, z)
+	local closestDistance = math.huge
+	if courseplay.fields.fieldData[fieldNum] then
+		for _, p in ipairs(courseplay.fields.fieldData[fieldNum].points) do
+			local d = courseplay:distance(x, z, p.cx, p.cz)
+			closestDistance = d < closestDistance and d or closestDistance
+		end
+	end
+	return closestDistance
+end
